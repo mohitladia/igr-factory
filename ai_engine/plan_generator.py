@@ -141,7 +141,10 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
     if not api_key:
         raise RuntimeError("No LLM key found. Set FREELLM_API_KEY or OPENAI_API_KEY in .env, or run with --demo.")
 
-    model = os.getenv("OPENAI_MODEL", "auto")
+    preferred_model = os.getenv("OPENAI_MODEL", "mistral-large-3")
+    if preferred_model == "auto":
+        preferred_model = "mistral-large-3"
+    candidate_models = [preferred_model, "claude-sonnet-4-5", "auto"]
     profile = classify_topic(topic)
     user_prompt = (
         f"EXACT USER TOPIC (must remain unchanged): {topic}\n"
@@ -149,36 +152,44 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
         f"Required concepts: {', '.join(profile.required_concepts)}\n"
         f"Suggested flow: {', '.join(profile.teaching_flow)}\n"
         f"Target duration: {duration_seconds} seconds.\n"
-        "Audience: Indian software engineers and tech learners. Style: cinematic opening, varied premium motion graphics, accurate explainer. "
-        "Create topic-specific beats. Do not force an infrastructure diagram onto an algorithm problem. "
-        "Use correct examples and terminology for the exact topic. Return JSON only."
+        "Audience: Indian software engineers and tech learners. Style: @backendlore style conversational Hinglish, punchy hook, concrete numbers, intuitive mental model, and interactive diagram nodes/steps on every beat. "
+        "Return JSON only with at least 6 beats."
     )
-    payload = {
-        "model": model,
-        "temperature": 0.7,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    try:
-        response = requests.post(_endpoint(), headers=headers, json=payload, timeout=180)
-        # Some OpenAI-compatible gateways do not implement response_format. Retry once without it.
-        if response.status_code in {400, 404, 422}:
-            retry_payload = dict(payload)
-            retry_payload.pop("response_format", None)
-            response = requests.post(_endpoint(), headers=headers, json=retry_payload, timeout=180)
-        response.raise_for_status()
-        body = response.json()
-        content = body["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "\n".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
-    except requests.RequestException as exc:
-        raise RuntimeError(f"LLM request failed: {exc}") from exc
-    except (KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError(f"Unexpected LLM response shape: {exc}") from exc
+    last_exc: Exception | None = None
+    content = ""
+    for model_name in dict.fromkeys(candidate_models):
+        payload = {
+            "model": model_name,
+            "temperature": 0.65,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        try:
+            response = requests.post(_endpoint(), headers=headers, json=payload, timeout=120)
+            if response.status_code in {400, 404, 422}:
+                retry_payload = dict(payload)
+                retry_payload.pop("response_format", None)
+                response = requests.post(_endpoint(), headers=headers, json=retry_payload, timeout=120)
+            response.raise_for_status()
+            body = response.json()
+            raw_content = body["choices"][0]["message"]["content"]
+            if isinstance(raw_content, list):
+                raw_content = "\n".join(str(part.get("text", "")) for part in raw_content if isinstance(part, dict))
+            parsed = _extract_json(raw_content)
+            if isinstance(parsed.get("beats"), list) and len(parsed["beats"]) >= 5:
+                content = raw_content
+                print(f"[llm] Generated {len(parsed['beats'])} beats via model '{model_name}' (routed: {body.get('model', model_name)})")
+                break
+        except Exception as exc:
+            last_exc = exc
+            continue
+
+    if not content:
+        raise RuntimeError(f"LLM request failed across candidate models: {last_exc}")
 
     plan = _extract_json(content)
     plan.setdefault("title", f"{topic}: explained")
