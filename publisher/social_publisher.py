@@ -29,8 +29,9 @@ def build_instagram_caption(plan: dict[str, Any]) -> str:
         f"📌 {topic} Production Breakdown:\n"
         + "\n".join(bullet_lines)
         + f"\n\n💬 Comment '{keyword}' aur main aapko {topic} ka complete PDF Interview Cheat Sheet & Architecture Notes सीधा DM bhej dunga! 🚀\n\n"
-        f"🔖 Save kar lo — agle System Design interview mein 100% kaam aayega!\n\n"
-        f"#{slug_tag} #systemdesign #backendengineering #softwareengineering #codinginterview "
+        f"🔖 Save kar lo — agle System Design interview mein 100% kaam aayega!\n"
+        f"👉 Follow @conceptfirstwithmohit — Technology yaad rakhne se nahi, sochne se aati hai.\n\n"
+        f"#{slug_tag} #conceptfirstwithmohit #systemdesign #backendengineering #softwareengineering #codinginterview "
         f"#techreels #indiandevs #leetcode #microservices #scalability #devops #dsa #hinglish"
     )
     return caption
@@ -72,7 +73,9 @@ def write_youtube_shorts_metadata(plan: dict[str, Any], destination: Path) -> di
         f"{hook_text}\n\n"
         f"In this Hinglish System Design & Backend Engineering Short, we break down {topic} with real production architecture and motion graphics:\n"
         + "\n".join(chapters)
-        + f"\n\n#shorts #youtubeshorts #{slug_tag} #systemdesign #backendengineering #codinginterview #softwareengineering #hinglish #techshorts"
+        + f"\n\n💡 Concept First with Mohit (@ConceptFirstWithMohit)\n"
+        f"Technology yaad rakhne se nahi, sochne se aati hai.\n\n"
+        f"#shorts #youtubeshorts #{slug_tag} #conceptfirstwithmohit #systemdesign #backendengineering #codinginterview #softwareengineering #hinglish #techshorts"
     )
     tags = [
         topic,

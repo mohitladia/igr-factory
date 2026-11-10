@@ -2,6 +2,7 @@ import React from 'react';
 import {
   AbsoluteFill,
   Audio,
+  Img,
   Sequence,
   interpolate,
   staticFile,
@@ -2823,14 +2824,29 @@ const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; p
 
         <div
           style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
             fontFamily: FONT_SANS,
             fontSize: 16,
-            color: C.muted,
-            marginTop: 35,
-            fontWeight: 600,
+            color: C.mutedLight,
+            marginTop: 32,
+            fontWeight: 700,
           }}
         >
-          {isShorts ? 'YouTube Shorts · Engineering' : 'Instagram Reel Factory'}
+          <Img
+            src={staticFile('branding/channel_avatar.jpg')}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              border: `1.5px solid ${C.green}`,
+              objectFit: 'cover',
+            }}
+          />
+          <span>
+            {isShorts ? '@ConceptFirstWithMohit · YouTube Shorts' : '@conceptfirstwithmohit · Concept First'}
+          </span>
         </div>
       </div>
 
@@ -3066,6 +3082,9 @@ const BenchmarkBeatScene: React.FC<{beat: Beat; plan: Plan; beatIndex: number; t
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
           <div
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
               fontFamily: FONT_MONO,
               fontSize: 18,
               fontWeight: 800,
@@ -3073,18 +3092,28 @@ const BenchmarkBeatScene: React.FC<{beat: Beat; plan: Plan; beatIndex: number; t
               color: C.white,
             }}
           >
-            {plan.platform === 'shorts' ? '▶ ALGO SHORTS' : 'ALGO REELS'}
+            <Img
+              src={staticFile('branding/channel_avatar.jpg')}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: '50%',
+                border: `1.5px solid ${C.green}`,
+                objectFit: 'cover',
+              }}
+            />
+            <span>{plan.platform === 'shorts' ? '▶ CONCEPT FIRST' : 'CONCEPT FIRST'}</span>
           </div>
           <div
             style={{
               fontFamily: FONT_MONO,
-              fontSize: 16,
-              letterSpacing: 2.5,
-              color: C.muted,
-              textTransform: 'uppercase',
+              fontSize: 15,
+              letterSpacing: 1.5,
+              color: C.mutedLight,
+              fontWeight: 700,
             }}
           >
-            {(plan.topic_family || 'SYSTEM DESIGN').replace('_', ' ')} · 10
+            @conceptfirstwithmohit · {(plan.topic_family || 'SYSTEM DESIGN').replace('_', ' ').toUpperCase()}
           </div>
         </div>
 
