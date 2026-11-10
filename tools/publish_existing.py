@@ -13,30 +13,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from publisher.social_publisher import (
-    GRAPH_API_BASE,
+    discover_instagram_account_id,
     publish_instagram_reel,
     upload_youtube_short,
 )
-
-
-def discover_instagram_account_id(access_token: str) -> str:
-    """Auto-discover INSTAGRAM_BUSINESS_ACCOUNT_ID from a Meta Graph API token."""
-    resp = requests.get(
-        f"{GRAPH_API_BASE}/me/accounts",
-        params={"fields": "id,name,instagram_business_account{id,username}", "access_token": access_token},
-        timeout=20,
-    )
-    resp.raise_for_status()
-    pages = resp.json().get("data", [])
-    for page in pages:
-        ig = page.get("instagram_business_account")
-        if ig and ig.get("id"):
-            print(f"[instagram] Found Instagram account @{ig.get('username')} (ID: {ig['id']}) linked to Page '{page.get('name')}'")
-            return str(ig["id"])
-    raise RuntimeError(
-        "No Instagram Business/Creator account found linked to your Facebook Pages. "
-        "Make sure your Instagram account is switched to Creator/Business and linked to a Facebook Page."
-    )
 
 
 def main() -> int:

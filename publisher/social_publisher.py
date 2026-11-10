@@ -9,6 +9,49 @@ from typing import Any
 import requests
 
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+IG_GRAPH_API_BASE = "https://graph.instagram.com/v21.0"
+
+
+def _get_ig_api_base(access_token: str) -> str:
+    return IG_GRAPH_API_BASE if access_token.strip().startswith("IG") else GRAPH_API_BASE
+
+
+def discover_instagram_account_id(access_token: str) -> str:
+    """
+    Auto-discover Instagram Professional Account ID from either:
+    1. An `IGAA...` token (Instagram API with Instagram Login — no Facebook Page needed)
+    2. An `EAA...` token (Facebook Login / Graph API Explorer linked to a Facebook Page)
+    """
+    token = access_token.strip()
+    if token.startswith("IG"):
+        resp = requests.get(
+            f"{IG_GRAPH_API_BASE}/me",
+            params={"fields": "user_id,id,username", "access_token": token},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        ig_id = str(data.get("user_id") or data.get("id") or "")
+        if ig_id:
+            print(f"[instagram] Found Instagram account @{data.get('username')} (ID: {ig_id}) via Instagram Login token")
+            return ig_id
+
+    resp = requests.get(
+        f"{GRAPH_API_BASE}/me/accounts",
+        params={"fields": "id,name,instagram_business_account{id,username}", "access_token": token},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    pages = resp.json().get("data", [])
+    for page in pages:
+        ig = page.get("instagram_business_account")
+        if ig and ig.get("id"):
+            print(f"[instagram] Found Instagram account @{ig.get('username')} (ID: {ig['id']}) linked to Page '{page.get('name')}'")
+            return str(ig["id"])
+    raise RuntimeError(
+        "Could not auto-discover Instagram Professional Account ID. "
+        "Ensure your Instagram account is switched to Creator/Business."
+    )
 
 
 def build_instagram_caption(plan: dict[str, Any]) -> str:
@@ -133,11 +176,15 @@ def publish_instagram_reel(video_path: Path, caption: str, share_to_feed: bool =
     """
     access_token = os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip()
     ig_user_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "").strip()
-    if not access_token or not ig_user_id:
+    if not access_token:
         raise RuntimeError(
-            "Missing INSTAGRAM_ACCESS_TOKEN or INSTAGRAM_BUSINESS_ACCOUNT_ID in .env. "
+            "Missing INSTAGRAM_ACCESS_TOKEN in .env. "
             "Add your Meta Graph API credentials to auto-publish Reels."
         )
+    if not ig_user_id:
+        ig_user_id = discover_instagram_account_id(access_token)
+        os.environ["INSTAGRAM_BUSINESS_ACCOUNT_ID"] = ig_user_id
+    api_base = _get_ig_api_base(access_token)
 
     print("[instagram] Staging MP4 to public URL for Meta Graph API ingestion...")
     video_url = _upload_temp_public_video(video_path)
@@ -145,7 +192,7 @@ def publish_instagram_reel(video_path: Path, caption: str, share_to_feed: bool =
 
     # Step 1: Create Reel Media Container
     create_resp = requests.post(
-        f"{GRAPH_API_BASE}/{ig_user_id}/media",
+        f"{api_base}/{ig_user_id}/media",
         data={
             "media_type": "REELS",
             "video_url": video_url,
@@ -165,7 +212,7 @@ def publish_instagram_reel(video_path: Path, caption: str, share_to_feed: bool =
     for _ in range(30):
         time.sleep(5)
         status_resp = requests.get(
-            f"{GRAPH_API_BASE}/{creation_id}",
+            f"{api_base}/{creation_id}",
             params={"fields": "status_code,status", "access_token": access_token},
             timeout=30,
         )
@@ -182,7 +229,7 @@ def publish_instagram_reel(video_path: Path, caption: str, share_to_feed: bool =
 
     # Step 3: Publish Container
     pub_resp = requests.post(
-        f"{GRAPH_API_BASE}/{ig_user_id}/media_publish",
+        f"{api_base}/{ig_user_id}/media_publish",
         data={"creation_id": creation_id, "access_token": access_token},
         timeout=60,
     )
