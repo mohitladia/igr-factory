@@ -20,7 +20,7 @@ RULES = [
      TopicProfile("backend_framework", "request_lifecycle_explainer", ("request_flow", "dependency_injection", "configuration"), ("hook", "problem", "core_concept", "request_lifecycle", "under_the_hood", "use_cases", "takeaway"))),
     (r"\b(java|jvm|garbage\s*collection|multithreading|concurrency)\b",
      TopicProfile("programming_language", "runtime_concept_explainer", ("core_concept", "execution_model", "tradeoff"), ("hook", "problem", "mental_model", "execution", "example", "tradeoffs", "takeaway"))),
-    (r"\b(system\s*design|microservices|load\s*balancer|database\s*sharding|rate\s*limiter|api\s*gateway|horizontal\s*scaling|vertical\s*scaling|scaling|autoscaling)\b",
+    (r"\b(system\s*design|microservices|load\s*balancer|database\s*sharding|sharding|consistent\s*hashing|hashing\s*ring|rate\s*limiter|api\s*gateway|horizontal\s*scaling|vertical\s*scaling|scaling|autoscaling|cap\s*theorem|cdn|webhook|graphql|docker|kubernetes)\b",
      TopicProfile("system_design", "architecture_tradeoff_explainer", ("requirements", "architecture", "tradeoffs"), ("hook", "problem", "requirements", "architecture", "request_flow", "tradeoffs", "takeaway"))),
 ]
 

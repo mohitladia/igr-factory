@@ -256,6 +256,100 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             connections=[[0, 1], [1, 2]]
           )
         ]
+    elif "consistent" in clean.lower() or "hashing" in clean.lower():
+        beats = [
+          dict(
+            id="hook",
+            type="kinetic_title",
+            title="CONSISTENT HASHING",
+            spoken_text="Interviewer ne poocha: 4 Redis servers mein se 1 crash hua, toh Modulo Hashing se 75 percent cache miss kyun ho jata hai? Jawab hai Consistent Hashing!",
+            tts_text="इंटरव्यूअर ने पूछा: चार Redis सर्वर्स में से एक क्रैश हुआ, तो Modulo Hashing से पचहत्तर परसेंट cache miss क्यों हो जाता है? जवाब है Consistent Hashing!",
+            visual_action="Reveal 4 Redis nodes where 1 crashes and 75% keys remap.",
+            accent_words=["75 percent cache miss", "Consistent Hashing"],
+            metric="75% CACHE MISS TRAP",
+            nodes=[], connections=[], steps=[]
+          ),
+          dict(
+            id="problem",
+            type="comparison",
+            title="MODULO N vs HASH RING",
+            spoken_text="Problem samjho: Normal hashing mein formula hota hai hash mod N. Jaise hi N 4 se 3 hua, har key ka remainder badal jata hai aur saara traffic Database koTod deta hai!",
+            tts_text="प्रॉब्लम समझो: नॉर्मल hashing में फ़ॉर्मूला होता है hash mod N! जैसे ही N चार से तीन हुआ, हर key का remainder बदल जाता है और सारा ट्रैफिक डेटाबेस को तोड़ देता है!",
+            visual_action="Compare hash(key) % 4 vs hash(key) % 3 causing 75% key reshuffle.",
+            accent_words=["hash mod N", "remainder", "Database"],
+            metric="HASH(KEY) % N FAILS",
+            nodes=[
+              {"label": "Modulo Hashing (hash % N)", "detail": "N=4 -> N=3 shifts 75% of all keys · DB Stampede!"},
+              {"label": "Consistent Hashing Ring", "detail": "Only 1/N (25%) keys move · Zero DB overload!"}
+            ],
+            connections=[], steps=[]
+          ),
+          dict(
+            id="ring_model",
+            type="architecture_build",
+            title="THE 360° HASH RING",
+            spoken_text="Consistent Hashing mein hum linear array nahi, ek 0 se 360 degree ka गोल Hash Ring banate hain! Aur teeno servers ko is ring ki boundary par bitha dete hain.",
+            tts_text="Consistent Hashing में हम linear array नहीं, एक ज़ीरो से तीन सौ साठ डिग्री का गोल Hash Ring बनाते हैं! और तीनों सर्वर्स को इस रिंग की बाउंड्री पर बिठा देते हैं!",
+            visual_action="Draw 360-degree Hash Ring and place Server S1 (0°), S2 (120°), S3 (240°).",
+            accent_words=["360 degree", "Hash Ring"],
+            metric="0° — 360° HASH RING",
+            nodes=[
+              {"label": "Server S1 (0°)", "detail": "Handles arc 240° -> 0°", "color": "#FF9F2A"},
+              {"label": "Server S2 (120°)", "detail": "Handles arc 0° -> 120°", "color": "#3FB950"},
+              {"label": "Server S3 (240°)", "detail": "Handles arc 120° -> 240°", "color": "#58A6FF"}
+            ],
+            connections=[[0, 1], [1, 2]],
+            steps=[]
+          ),
+          dict(
+            id="clockwise_lookup",
+            type="data_flow",
+            title="CLOCKWISE KEY ROUTING",
+            spoken_text="Ab jab User Key aati hai, uska hash angle nikalo — maan lo 45 degree! Wahan se ghadi ki disha mein yaani Clockwise chalo, jo pehla server mila S2, data wahan save!",
+            tts_text="अब जब User Key आती है, उसका hash angle निकालो — मान लो पैंतालीस डिग्री! वहाँ से घड़ी की दिशा में यानी Clockwise चलो, जो पहला सर्वर मिला S2, डेटा वहाँ सेव!",
+            visual_action="Animate Key landing at 45° and walking clockwise to Server S2 at 120°.",
+            accent_words=["45 degree", "Clockwise", "S2"],
+            metric="CLOCKWISE LOOKUP ↻",
+            steps=[
+              {"label": "1. Hash Key -> 45°", "detail": "Map user_id onto 0°..360° ring"},
+              {"label": "2. Walk Clockwise ↻", "detail": "Move forward along the ring arc"},
+              {"label": "3. Hit Server S2 (120°)", "detail": "Store & fetch key on first server found!"}
+            ],
+            nodes=[], connections=[]
+          ),
+          dict(
+            id="virtual_nodes",
+            type="concept_visual",
+            title="CRASH & VIRTUAL NODES",
+            spoken_text="Fayda dekho: Agar S2 crash bhi hua, toh sirf S2 ki keys agle server S3 pe jayengi — baki 75 percent servers untouched! Aur load barabar baantne ke liye hum Virtual Nodes lagate hain.",
+            tts_text="फ़ायदा देखो: अगर S2 क्रैश भी हुआ, तो सिर्फ़ S2 की keys अगले सर्वर S3 पे जाएँगी — बाक़ी पचहत्तर परसेंट सर्वर्स untouched! और लोड बराबर बाँटने के लिए हम Virtual Nodes लगाते हैं!",
+            visual_action="Show S2 failing and only its keys moving clockwise to S3, plus Virtual Nodes.",
+            accent_words=["sirf S2 ki keys", "Virtual Nodes"],
+            metric="VIRTUAL NODES (vNODES)",
+            nodes=[
+              {"label": "1. S2 Crashes", "detail": "Only S2 arc keys shift clockwise to S3", "color": "#FF9F2A"},
+              {"label": "2. 75% Keys Untouched", "detail": "S1 and S3 caches remain 100% valid!", "color": "#3FB950"},
+              {"label": "3. Virtual Nodes (vNodes)", "detail": "Multiple labels per server for even load", "color": "#58A6FF"}
+            ],
+            connections=[[0, 1], [1, 2]],
+            steps=[]
+          ),
+          dict(
+            id="summary",
+            type="summary",
+            title="HASHING CHEATSHEET",
+            spoken_text="Yaad rakho: 360 degree Hash Ring, Clockwise routing, aur Virtual Nodes! DynamoDB aur Cassandra yahi use karte hain. Comment HASH karo, aur save kar lo — interview mein kaam aayega!",
+            tts_text="याद रखो: तीन सौ साठ डिग्री Hash Ring, Clockwise routing, और Virtual Nodes! DynamoDB और Cassandra यही यूज़ करते हैं! कमेंट HASH करो, और सेव कर लो — इंटरव्यू में काम आएगा!",
+            visual_action="Show PDF cheat sheet card and DM automation CTA.",
+            accent_words=["Hash Ring", "Virtual Nodes", "Comment HASH"],
+            nodes=[
+              {"label": "360° Hash Ring", "detail": "Servers & keys on same circle"},
+              {"label": "Clockwise Walk ↻", "detail": "Only 1/N keys move on crash"},
+              {"label": "Virtual Nodes", "detail": "Prevent hot-spots & skew"}
+            ],
+            connections=[[0, 1], [1, 2]]
+          )
+        ]
     else:
         slug_tag = clean.upper().replace(" ", "")[:14]
         beats = [

@@ -83,13 +83,15 @@ def main() -> int:
         print("\n[1/5] Generating story and visual beats...")
         if args.demo:
             raw_plan = build_demo_plan(topic, duration)
+            plan = validate_and_normalize(raw_plan, topic)
         else:
             try:
                 raw_plan = generate_plan(topic, duration)
+                plan = validate_and_normalize(raw_plan, topic)
             except Exception as llm_exc:
-                print(f"[plan-fallback] LLM gateway unavailable ({llm_exc}); using universal topic storyboard generator.")
+                print(f"[plan-fallback] LLM response incomplete or unavailable ({llm_exc}); using high-retention topic storyboard generator.")
                 raw_plan = build_demo_plan(topic, duration)
-        plan = validate_and_normalize(raw_plan, topic)
+                plan = validate_and_normalize(raw_plan, topic)
         print(f"[topic-lock] family={plan.get('topic_family')} format={plan.get('teaching_format')}")
         print(f"[topic-lock] validated exact topic: {plan['topic']}")
 

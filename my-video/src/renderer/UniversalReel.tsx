@@ -316,10 +316,10 @@ const InterviewHookCard: React.FC<{
           </div>
         </div>
 
-        {/* Large Scale Metric Number */}
+        {/* Large Scale Metric Number + Phase B Multi-Phase Stamp */}
         <div
           style={{
-            marginTop: 75,
+            marginTop: 55,
             textAlign: 'center',
             opacity: statEnter,
             transform: `translateY(${(1 - statEnter) * 20}px)`,
@@ -328,7 +328,7 @@ const InterviewHookCard: React.FC<{
           <div
             style={{
               fontFamily: FONT_SANS,
-              fontSize: 66,
+              fontSize: 64,
               fontWeight: 900,
               color: C.gold,
               letterSpacing: -1,
@@ -348,6 +348,25 @@ const InterviewHookCard: React.FC<{
           >
             {statSub}
           </div>
+
+          {frame >= 85 && (
+            <div
+              style={{
+                marginTop: 28,
+                display: 'inline-block',
+                padding: '14px 36px',
+                borderRadius: 16,
+                background: 'rgba(14, 8, 10, 0.96)',
+                border: `3px solid ${C.red}`,
+                boxShadow: `0 16px 50px rgba(0,0,0,0.9), 0 0 40px ${C.red}`,
+                transform: `rotate(-3deg) scale(${interpolate(frame, [85, 100], [1.6, 1], clamp)})`,
+              }}
+            >
+              <span style={{fontFamily: FONT_MONO, fontSize: 28, fontWeight: 900, color: C.red, letterSpacing: 2}}>
+                ✕ NAIVE TRAP → {pillTag.toUpperCase()}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2542,9 +2561,77 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
       </div>
 
       {/* Main Beat Title */}
-      <div style={{textAlign: 'center', marginBottom: 24, opacity: enter}}>
-        <EditorialText text={`*${beat.title || topic}*`} fontSize={52} color={C.white} accentColor={C.gold} />
+      <div style={{textAlign: 'center', marginBottom: 18, opacity: enter}}>
+        <EditorialText text={`*${beat.title || topic}*`} fontSize={48} color={C.white} accentColor={C.gold} />
       </div>
+
+      {/* Interactive 360° Hash Ring / Circular Radar Canvas when topic involves Hashing/Ring/Sharding */}
+      {(topic.toLowerCase().includes('hash') ||
+        topic.toLowerCase().includes('ring') ||
+        (beat.spoken_text || '').toLowerCase().includes('ring')) && (
+        <div
+          style={{
+            position: 'relative',
+            width: 300,
+            height: 300,
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: enter,
+          }}
+        >
+          <svg width="300" height="300" viewBox="0 0 300 300">
+            {/* Outer glowing 360° Hash Ring */}
+            <circle
+              cx="150"
+              cy="150"
+              r="110"
+              fill="rgba(16, 22, 32, 0.85)"
+              stroke={C.blue}
+              strokeWidth="4"
+              strokeDasharray="10 6"
+            />
+            {/* Animated Clockwise Lookup Arc */}
+            <circle
+              cx="150"
+              cy="150"
+              r="110"
+              fill="none"
+              stroke={C.green}
+              strokeWidth="6"
+              strokeDasharray={`${interpolate(frame % 90, [0, 89], [20, 240], clamp)} 700`}
+              strokeLinecap="round"
+              transform="rotate(-90 150 150)"
+            />
+            {/* 3 Physical Server Nodes + Virtual Nodes on the Ring */}
+            <circle cx="150" cy="40" r="16" fill={C.gold} />
+            <text x="150" y="45" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">
+              S1
+            </text>
+            <circle cx="245" cy="205" r="16" fill={C.green} />
+            <text x="245" y="210" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">
+              S2
+            </text>
+            <circle cx="55" cy="205" r="16" fill={C.blue} />
+            <text x="55" y="210" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">
+              S3
+            </text>
+            {/* Orbiting Key Token */}
+            {(() => {
+              const angle = ((frame * 3) % 360) * (Math.PI / 180);
+              const kx = 150 + 110 * Math.cos(angle - Math.PI / 2);
+              const ky = 150 + 110 * Math.sin(angle - Math.PI / 2);
+              return <circle cx={kx} cy={ky} r="9" fill="#FFFFFF" stroke={C.green} strokeWidth="4" />;
+            })()}
+          </svg>
+          <div style={{position: 'absolute', textAlign: 'center'}}>
+            <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.muted}}>HASH RING</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 22, fontWeight: 900, color: C.green}}>0° — 360°</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold, marginTop: 2}}>CLOCKWISE ↻</div>
+          </div>
+        </div>
+      )}
 
       {/* Dynamic Interactive Cards Stack with Live Flow Connectors */}
       <div style={{width: 880, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, opacity: enter}}>
