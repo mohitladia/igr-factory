@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from ai_engine.topic_classifier import classify_topic
+from ai_engine.youtube_research import fetch_youtube_research
 
 import requests
 
@@ -146,13 +147,18 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
         preferred_model = "mistral-large-3"
     candidate_models = [preferred_model, "claude-sonnet-4-5", "auto"]
     profile = classify_topic(topic)
+    yt_research = fetch_youtube_research(topic, max_results=3)
+    yt_context = yt_research.get("context_block", "")
+    if yt_context:
+        print(f"[youtube-research] Grounded prompt with {len(yt_research.get('videos', []))} top YouTube references.")
     user_prompt = (
         f"EXACT USER TOPIC (must remain unchanged): {topic}\n"
         f"Detected family: {profile.family}\nTeaching format: {profile.format_name}\n"
         f"Required concepts: {', '.join(profile.required_concepts)}\n"
         f"Suggested flow: {', '.join(profile.teaching_flow)}\n"
         f"Target duration: {duration_seconds} seconds.\n"
-        "Audience: Indian software engineers and tech learners. Style: @backendlore style conversational Hinglish, punchy hook, concrete numbers, intuitive mental model, and interactive diagram nodes/steps on every beat. "
+        + (f"REAL YOUTUBE VIRAL RESEARCH CONTEXT (use for hook angles & concrete stats):\n{yt_context}\n" if yt_context else "")
+        + "Audience: Indian software engineers and tech learners. Style: @backendlore style conversational Hinglish, punchy hook, concrete numbers, intuitive mental model, and interactive diagram nodes/steps on every beat. "
         "Return JSON only with at least 6 beats."
     )
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}

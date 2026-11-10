@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "instagram": {
+      "command": "npx",
+      "args": ["-y", "@mcpware/instagram-mcp"],
+      "env": {
+        "INSTAGRAM_ACCESS_TOKEN": "${INSTAGRAM_ACCESS_TOKEN}",
+        "INSTAGRAM_BUSINESS_ACCOUNT_ID": "${INSTAGRAM_BUSINESS_ACCOUNT_ID}"
+      }
+    },
+    "youtube-research": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/ia-programming/youtube-mcp.git", "python", "server.py"],
+      "env": {
+        "GOOGLE_API_KEY": "${GOOGLE_API_KEY}"
+      }
+    }
+  }
+}
