@@ -1,0 +1,302 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+from typing import Any
+
+from ai_engine.topic_classifier import classify_topic
+
+import requests
+
+ALLOWED_TYPES = {
+    "kinetic_title", "cinematic_visual", "concept_visual", "architecture_build",
+    "data_flow", "comparison", "metric_callout", "summary",
+}
+
+SYSTEM_PROMPT = """CRITICAL TOPIC LOCK: Teach only the exact topic supplied by the user. Never substitute Kafka or any default topic. Choose a topic-specific teaching format. For DSA problems include problem statement, baseline approach, optimized approach, dry run, and complexity. For frameworks explain lifecycle and mechanisms. For infrastructure explain architecture and tradeoffs. Every beat must directly teach the requested topic. Separate viewer-facing title/spoken_text from internal visual_action and asset_prompt. NEVER display visual_action, asset_prompt, internal_notes, or production directions as on-screen text. Never use generic placeholders such as System component, Component, or Step. If unable to create accurate topic-specific content, fail rather than switch topics.
+
+STORYTELLING & BENCHMARK RULES (@backendlore style):
+1. HOOK (Beat 1): Start with an urgent interview dilemma or high-stakes misconception (e.g., "Interview mein [Topic] pucha toh 90% log brute force bolte hain aur interviewer wahi reject kar deta hai!"). Never start with textbook definitions like "Today we will discuss".
+2. INTUITIVE MENTAL MODEL: Explain core mechanics through a physical analogy or mental model (e.g., "memory diary", "conveyor belt", "passport checkpoint") rather than dry academic jargon.
+3. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior tech lead chatting 1-on-1 in natural Roman Hinglish.
+4. PACING: Keep each spoken_text beat concise and punchy (typically 10-18 words, maximum 22 words). Avoid rambling sentences.
+5. OUTRO CTA: The final beat must trigger comments for DM automation (e.g., "Comment [KEYWORD] for complete PDF cheat sheet & code notes!").
+
+OUTPUT FORMAT:
+Return ONLY valid JSON. Do not add Markdown fences or commentary.
+The JSON must have: title, topic, language, target_duration_seconds, beats.
+Create 8 to 12 punchy beats targeting about 60-75 seconds total.
+Each beat must have:
+- id: short snake_case unique
+- type: one of kinetic_title, cinematic_visual, concept_visual, architecture_build, data_flow, comparison, metric_callout, summary
+- title: max 6 words, editorial
+- spoken_text: natural conversational narration in Roman Hinglish for on-screen captions, 10-18 words
+- tts_text: REQUIRED Devanagari Hindi + English tech terms version of spoken_text for native Hindi TTS pronunciation (write Hindi words in Devanagari script and keep technical English words like HashMap, O(n), Redis, Load Balancer, API in Latin script)
+- visual_action: specific animation instruction for motion graphics
+- accent_words: array of 2-4 highlight words
+- asset_prompt: string or null (cinematic abstract background only)
+- nodes: array of {label, detail, color}
+- connections: array of pairs of node indexes
+- steps: array of {label, detail}
+- metric: optional string callout (e.g., "O(1) LOOKUP", "10M MSG/S")
+"""
+
+_ROMAN_TO_DEVANAGARI: dict[str, str] = {
+    "mein": "में", "hai": "है", "hain": "हैं", "tha": "था", "thi": "थी", "the": "थे",
+    "toh": "तो", "kya": "क्या", "kyun": "क्यों", "kaise": "कैसे", "kab": "कब", "kahan": "कहाँ",
+    "aur": "और", "ya": "या", "ek": "एक", "do": "दो", "teen": "तीन", "char": "चार",
+    "hum": "हम", "aap": "आप", "aapka": "आपका", "aapki": "आपकी", "hamein": "हमें", "apne": "अपने",
+    "ko": "को", "ka": "का", "ki": "की", "ke": "के", "se": "से", "par": "पर", "pe": "पे",
+    "bhi": "भी", "hi": "ही", "nahi": "नहीं", "mat": "मत", "na": "ना",
+    "karo": "करो", "karta": "करता", "karti": "करती", "karte": "करते", "kiya": "किया", "karenge": "करेंगे",
+    "hota": "होता", "hoti": "होती", "hote": "होते", "hua": "हुआ", "hui": "हुई", "ho": "हो", "jaye": "जाए",
+    "dekho": "देखो", "dekhte": "देखते", "samjho": "समझो", "samajhte": "समझते", "samajhna": "समझना", "socho": "सोचो",
+    "agar": "अगर", "jab": "जब", "tab": "तब", "jahan": "जहाँ", "wahan": "वहाँ", "wahi": "वहीं",
+    "yeh": "ये", "ye": "ये", "woh": "वो", "wo": "वो", "iska": "इसका", "iski": "इसकी", "iske": "इसके", "isi": "इसी",
+    "isliye": "इसलिए", "kyunki": "क्योंकि", "lekin": "लेकिन", "balki": "बल्कि",
+    "bada": "बड़ा", "bade": "बड़े", "chhota": "छोटा", "chhote": "छोटे", "zyada": "ज़्यादा", "kam": "कम",
+    "pehle": "पहले", "baad": "बाद", "aage": "आगे", "peeche": "पीछे", "andar": "अंदर", "bahar": "बाहर",
+    "sara": "सारा", "poora": "पूरा", "har": "हर", "sabse": "सबसे", "kuch": "कुछ", "koi": "कोई",
+    "fayda": "फ़ायदा", "dikkat": "दिक्कत", "zaroori": "ज़रूरी", "namumkin": "नामुमकिन",
+    "yaad": "याद", "rakho": "रखो", "rakhti": "रखती", "rakhna": "रखना", "padta": "पड़ता",
+    "pucha": "पूछा", "poocha": "पूछा", "bolte": "बोलते", "boli": "बोली", "kehte": "कहते",
+    "deta": "देता", "deti": "देती", "dete": "देते", "dena": "देना",
+    "aata": "आता", "aati": "आती", "aate": "आते", "aaya": "आया", "aane": "आने", "aayega": "आएगा",
+    "jata": "जाता", "jaata": "जाता", "ban": "बन", "gayi": "गई", "gaya": "गया", "banaya": "बनाया", "bana": "बना", "lo": "लो",
+    "bina": "बिना", "saath": "साथ", "badle": "बदले", "bajaye": "बजाय", "yaani": "यानी", "matlab": "मतलब",
+    "lakh": "लाख", "crore": "करोड़", "hazar": "हज़ार", "barabar": "बराबर", "achanak": "अचानक", "sidha": "सीधा",
+    "khali": "खाली", "purane": "पुराने", "naye": "नए", "nya": "नया", "agla": "अगला", "akela": "अकेला",
+    "kitna": "कितना", "kabhi": "कभी", "aaj": "आज", "ab": "अब", "bas": "बस", "khud": "ख़ुद", "kaam": "काम",
+    "dhoondhna": "ढूँढना", "dhoondhne": "ढूँढने", "लगाते": "लगाते", "lagate": "लगाते", "lagta": "लगता", "laga": "लगा",
+    "baant": "बाँट", "jodna": "जोड़ना", "bhej": "भेज", "badhne": "बढ़ने", "badhana": "बढ़ाना", "teeno": "तीनों",
+    "ratta": "रट्टा", "baar": "बार", "baar-baar": "बार-बार",
+}
+
+
+_ACRONYM_TO_DEVANAGARI: dict[str, str] = {
+    "rag": "आर ए जी",
+    "pdf": "पी डी एफ",
+    "pdfs": "पी डी एफ्स",
+    "ai": "ए आई",
+    "db": "डी बी",
+    "llm": "एल एल एम",
+    "llms": "एल एल एम्स",
+    "api": "ए पी आई",
+    "cpu": "सी पी यू",
+    "gpu": "जी पी यू",
+    "ram": "रैम",
+    "sql": "एस क्यू एल",
+    "jwt": "जे डब्ल्यू टी",
+    "dns": "डी एन एस",
+    "http": "एच टी टी पी",
+    "tcp": "टी सी पी",
+    "dsa": "डी एस ए",
+    "spof": "सिंगल पॉइंट ऑफ़ फेलियर",
+}
+
+
+def ensure_devanagari_tts_text(spoken_text: str, tts_text: str | None = None) -> str:
+    """Ensure tts_text has Devanagari Hindi phonetics and proper acronym pronunciation."""
+    candidate = (tts_text or "").strip()
+    source = candidate if (candidate and re.search(r"[\u0900-\u097F]", candidate)) else (candidate or spoken_text.strip())
+
+    def _replace_token(match: re.Match[str]) -> str:
+        word = match.group(0)
+        low = word.lower()
+        if low in _ACRONYM_TO_DEVANAGARI:
+            return _ACRONYM_TO_DEVANAGARI[low]
+        return _ROMAN_TO_DEVANAGARI.get(low, word)
+
+    return re.sub(r"[A-Za-z]+(?:-[A-Za-z]+)?", _replace_token, source)
+
+
+def _extract_json(text: str) -> dict[str, Any]:
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
+    text = re.sub(r"\s*```$", "", text)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise ValueError("LLM response did not contain a JSON object")
+        value = json.loads(text[start : end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("LLM response root must be a JSON object")
+    return value
+
+
+def _endpoint() -> str:
+    base = os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:31415/v1").rstrip("/")
+    return base if base.endswith("/chat/completions") else f"{base}/chat/completions"
+
+
+def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
+    api_key = os.getenv("FREELLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("No LLM key found. Set FREELLM_API_KEY or OPENAI_API_KEY in .env, or run with --demo.")
+
+    model = os.getenv("OPENAI_MODEL", "auto")
+    profile = classify_topic(topic)
+    user_prompt = (
+        f"EXACT USER TOPIC (must remain unchanged): {topic}\n"
+        f"Detected family: {profile.family}\nTeaching format: {profile.format_name}\n"
+        f"Required concepts: {', '.join(profile.required_concepts)}\n"
+        f"Suggested flow: {', '.join(profile.teaching_flow)}\n"
+        f"Target duration: {duration_seconds} seconds.\n"
+        "Audience: Indian software engineers and tech learners. Style: cinematic opening, varied premium motion graphics, accurate explainer. "
+        "Create topic-specific beats. Do not force an infrastructure diagram onto an algorithm problem. "
+        "Use correct examples and terminology for the exact topic. Return JSON only."
+    )
+    payload = {
+        "model": model,
+        "temperature": 0.7,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(_endpoint(), headers=headers, json=payload, timeout=180)
+        # Some OpenAI-compatible gateways do not implement response_format. Retry once without it.
+        if response.status_code in {400, 404, 422}:
+            retry_payload = dict(payload)
+            retry_payload.pop("response_format", None)
+            response = requests.post(_endpoint(), headers=headers, json=retry_payload, timeout=180)
+        response.raise_for_status()
+        body = response.json()
+        content = body["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "\n".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+    except requests.RequestException as exc:
+        raise RuntimeError(f"LLM request failed: {exc}") from exc
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"Unexpected LLM response shape: {exc}") from exc
+
+    plan = _extract_json(content)
+    plan.setdefault("title", f"{topic}: explained")
+    # Preserve the model's claimed topic. validate_and_normalize must inspect it;
+    # silently replacing it here previously hid topic drift.
+    plan.setdefault("topic", topic)
+    plan.setdefault("language", "hinglish")
+    plan.setdefault("target_duration_seconds", duration_seconds)
+    return plan
+
+
+def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
+    profile = classify_topic(topic)
+    returned_topic = str(plan.get("topic", topic)).strip()
+    if returned_topic and returned_topic.lower() != topic.strip().lower():
+        raise ValueError(f"Topic lock failed: requested '{topic}', AI returned '{returned_topic}'.")
+    beats = plan.get("beats")
+    if not isinstance(beats, list) or not beats:
+        raise ValueError("Plan must contain a non-empty 'beats' array")
+
+    # Topic-specific semantic guard: Two Sum must actually teach Two Sum,
+    # not merely carry a Two Sum title while narrating Kafka.
+    if re.search(r"\btwo\s*sum\b", topic, re.I):
+        corpus_parts = []
+        for beat in beats:
+            if isinstance(beat, dict):
+                corpus_parts.extend([
+                    str(beat.get("title", "")), str(beat.get("spoken_text", "")),
+                    str(beat.get("visual_action", "")), str(beat.get("metric", "")),
+                ])
+                for key in ("nodes", "steps"):
+                    values = beat.get(key, [])
+                    if isinstance(values, list):
+                        for value in values:
+                            corpus_parts.append(str(value))
+        corpus = " ".join(corpus_parts).lower()
+        kafka_terms = ("kafka", "producer", "consumer group", "broker", "partition", "event streaming")
+        leaked = [term for term in kafka_terms if term in corpus]
+        # Accept common synonyms: hash map / hash table / dictionary, and O(n) in various forms
+        required_patterns = [
+            (r"hash[\s_-]?map|hash[\s_-]?table|\bdict(?:ionary)?\b", "hashmap/dict"),
+            (r"\bcomplement\b|\bdifference\b|\btarget\s*-\s*\w+", "complement"),
+            (r"\btarget\b", "target"),
+            (r"o\s*\(\s*n\s*\)|linear\s*time|o of n", "O(n)"),
+        ]
+        missing = [label for pattern, label in required_patterns if not re.search(pattern, corpus, re.I)]
+        if leaked:
+            raise ValueError("Topic relevance check failed for Two Sum: Kafka concepts detected (" + ", ".join(leaked) + "). No video was rendered.")
+        if missing:
+            raise ValueError("Topic relevance check failed for Two Sum: missing core teaching concepts (" + ", ".join(missing) + "). No video was rendered.")
+
+    clean_beats: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(beats, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"Beat {index} must be an object")
+        beat_id = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(item.get("id") or f"beat_{index}")).strip("_").lower()
+        if not beat_id or beat_id in seen:
+            beat_id = f"beat_{index}"
+        seen.add(beat_id)
+        beat_type = str(item.get("type", "concept_visual"))
+        if beat_type not in ALLOWED_TYPES:
+            beat_type = "concept_visual"
+        spoken = str(item.get("spoken_text", "")).strip()
+        raw_nodes = item.get("nodes", []) if isinstance(item.get("nodes"), list) else []
+        viewer_text = " ".join([str(item.get("title", "")), spoken] +
+            [str(n.get("label", "")) + " " + str(n.get("detail", "")) for n in raw_nodes if isinstance(n, dict)])
+        forbidden = ("system component", "production note", "fast montage", "use a controlled slow zoom", "placeholder")
+        if any(term in viewer_text.lower() for term in forbidden):
+            raise ValueError(f"Content quality check failed in beat {index}: placeholder/production text found.")
+        if not spoken:
+            raise ValueError(f"Beat '{beat_id}' has no spoken_text")
+        nodes = item.get("nodes") if isinstance(item.get("nodes"), list) else []
+        steps = item.get("steps") if isinstance(item.get("steps"), list) else []
+        connections = item.get("connections") if isinstance(item.get("connections"), list) else []
+        clean_nodes = []
+        for node in nodes[:5]:
+            if isinstance(node, str):
+                clean_nodes.append({"label": node, "detail": "", "color": "#55B9FF"})
+            elif isinstance(node, dict):
+                clean_nodes.append({
+                    "label": str(node.get("label", "Component"))[:40],
+                    "detail": str(node.get("detail", ""))[:70],
+                    "color": str(node.get("color", "#55B9FF")),
+                })
+        clean_connections = []
+        for edge in connections[:8]:
+            if isinstance(edge, (list, tuple)) and len(edge) >= 2:
+                try:
+                    a, b = int(edge[0]), int(edge[1])
+                    if 0 <= a < len(clean_nodes) and 0 <= b < len(clean_nodes) and a != b:
+                        clean_connections.append([a, b])
+                except (ValueError, TypeError):
+                    pass
+        clean_steps = []
+        for step in steps[:5]:
+            if isinstance(step, str):
+                clean_steps.append({"label": step, "detail": ""})
+            elif isinstance(step, dict):
+                clean_steps.append({"label": str(step.get("label", "Step"))[:40], "detail": str(step.get("detail", ""))[:70]})
+        clean_beats.append({
+            "id": beat_id,
+            "type": beat_type,
+            "title": str(item.get("title") or topic)[:80],
+            "spoken_text": spoken,
+            "tts_text": ensure_devanagari_tts_text(spoken, item.get("tts_text")),
+            "visual_action": str(item.get("visual_action", "Reveal the key concept with a purposeful motion."))[:300],
+            "accent_words": [str(x)[:30] for x in (item.get("accent_words") or [])[:8]],
+            "asset_prompt": str(item["asset_prompt"])[:700] if item.get("asset_prompt") else None,
+            "nodes": clean_nodes,
+            "connections": clean_connections,
+            "steps": clean_steps,
+            "metric": str(item.get("metric", ""))[:35],
+        })
+    if len(clean_beats) < 4:
+        raise ValueError(f"AI returned only {len(clean_beats)} beats; expected at least 4. Retry with a stronger prompt.")
+    return {
+        "title": str(plan.get("title", f"{topic}: explained")),
+        "topic": topic,
+        "topic_family": profile.family,
+        "teaching_format": profile.format_name,
+        "language": str(plan.get("language", "hinglish")),
+        "target_duration_seconds": int(plan.get("target_duration_seconds", 70)),
+        "beats": clean_beats,
+    }

@@ -1,0 +1,33 @@
+Instagram Reel Factory — Universal Engine v3 (Post-Audit Fixes)
+
+Fixed (v3.1):
+- UniversalReel.tsx: Removed hardcoded "THE SYSTEM DESIGN BREAKDOWN" and "SYSTEM DESIGN / EXPLAINED"
+  labels. TitleBlock and VisualContent now receive topicFamily from the plan and render context-aware
+  eyebrow labels (DSA / EXPLAINED, BACKEND / EXPLAINED, etc.).
+- UniversalReel.tsx: data_flow beat fallback replaced — Kafka-specific Producer/Topic/Partition/Consumer
+  labels are gone; generic Input → Process → Output is used when no steps are provided.
+- UniversalReel.tsx: metric_callout subtitle is now topic-aware (TIME · SPACE · COMPLEXITY for DSA;
+  EVENTS · STREAMS · SYSTEMS only for distributed_messaging; etc.).
+- UniversalReel.tsx: comparison fallback changed from "Tightly coupled / Loosely coupled" to topic-neutral
+  "Naive approach / Optimized approach".
+- UniversalReel.tsx: summary prompt is topic-aware ("WHAT DSA PROBLEM NEXT?" for DSA topics).
+- UniversalReel.tsx: CaptionOverlay moved to Instagram safe zone — bottom: 300px, right: 130px
+  (clear of Like/Comment/Share buttons and caption UI chrome).
+- voice_generator.py: width and height are now set with setdefault() so .env / run.py values are
+  respected instead of being silently overwritten to 1080x1920.
+- voice_generator.py: _probe_duration() now falls back to file-size estimation (~128 kbps) when
+  ffprobe is unavailable, preventing silent failure on machines without FFmpeg.
+- plan_generator.py: Two Sum semantic guard uses regex patterns instead of exact substrings.
+  "hash map", "hash table", "dict", "O(N)", "linear time", "o of n" are all accepted.
+- tests/test_topic_classifier.py: Converted from pytest-style functions to unittest.TestCase subclass.
+  Now discovered by standard `python -m unittest discover` without installing pytest.
+- requirements-dev.txt: Added pytest>=8.0.0 for developers who prefer pytest.
+- run_demo.bat: Default topic changed from "Apache Kafka" to "Two Sum" so the demo showcases the
+  tailored DSA walkthrough with the full algorithm plan.
+- config/settings.yaml: Marked as not currently loaded at runtime (reference / future wiring point).
+
+Verification:
+- 10 Python tests passed (python -m unittest discover -s tests -v).
+- TypeScript compilation passed (npx tsc --noEmit, exit 0).
+- Semantic guard broadened: hash map (space), O(N) uppercase accepted; Kafka still rejected.
+- End-to-end demo render: Two Sum MP4 generated successfully (15 MB, 2430 frames, 81s).

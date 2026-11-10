@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Instagram Reel Factory Plan",
+  "type": "object",
+  "required": ["title", "topic", "beats"],
+  "properties": {
+    "title": {"type": "string"},
+    "topic": {"type": "string"},
+    "language": {"type": "string"},
+    "target_duration_seconds": {"type": "integer", "minimum": 20, "maximum": 180},
+    "beats": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "title", "spoken_text", "visual_action"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {"enum": ["kinetic_title", "cinematic_visual", "concept_visual", "architecture_build", "data_flow", "comparison", "metric_callout", "summary"]},
+          "title": {"type": "string"},
+          "spoken_text": {"type": "string"},
+          "visual_action": {"type": "string"},
+          "accent_words": {"type": "array", "items": {"type": "string"}},
+          "asset_prompt": {"type": ["string", "null"]},
+          "nodes": {"type": "array"},
+          "connections": {"type": "array"},
+          "steps": {"type": "array"}
+        }
+      }
+    }
+  }
+}

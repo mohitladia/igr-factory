@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+my-video/node_modules/
+output/runs/*
+output/final/*
+output/samples/*
+output/reference/*
+!my-video/public/audio/bg_ambient.mp3
+my-video/public/audio/beat_*
+my-video/public/assets/*
+my-video/src/data/plan.json

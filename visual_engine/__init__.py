@@ -1,0 +1,1 @@
+"""Optional visual asset generation."""

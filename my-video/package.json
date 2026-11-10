@@ -1,0 +1,22 @@
+{
+  "name": "instagram-reel-factory-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Universal JSON-driven Instagram Reel renderer",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Reel output.mp4",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.542",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.7",
+    "typescript": "5.8.3"
+  }
+}

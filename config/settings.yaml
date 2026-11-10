@@ -1,0 +1,5 @@
+# NOTE: This file is not currently loaded at runtime.
+# Active settings are read from .env by run.py.
+# This file is kept as a reference / future wiring point.
+# To activate it: pip install PyYAML and load it in run.py via yaml.safe_load().
+
