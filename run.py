@@ -60,6 +60,7 @@ def render_video(root: Path, output_path: Path) -> None:
     my_video = root / "my-video"
     if not (my_video / "node_modules").exists():
         raise RuntimeError("Remotion dependencies are not installed. Run setup_windows.bat first.")
+    output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     executable = "npx.cmd" if os.name == "nt" else "npx"
     command = [executable, "remotion", "render", "src/index.ts", "Reel", str(output_path), "--codec", os.getenv("REMOTION_CODEC", "h264")]
@@ -114,8 +115,14 @@ def main() -> int:
         if report.feedback:
             for tip in report.feedback:
                 print(f"[critic-tip] {tip}")
+        if not report.passed and not args.demo:
+            print("[critic-fallback] LLM storyboard did not pass quality gate; upgrading to verified high-retention storyboard.")
+            raw_plan = build_demo_plan(topic, duration)
+            plan = validate_and_normalize(raw_plan, topic)
+            report = evaluate_plan_quality(plan)
+            print(f"[critic] Fallback Story Quality Score: {report.score}/10")
         if not report.passed:
-            print("[critic-warn] Quality gate flagged potential engagement issues, proceeding with best effort.")
+            raise RuntimeError(f"Story quality check failed ({report.score}/10): {'; '.join(report.feedback)}")
         plan["fps"] = fps
         plan["width"] = width
         plan["height"] = height
@@ -177,11 +184,13 @@ def main() -> int:
             post_report = inspect_and_optimize_video(output_path, expected_width=width, expected_height=height)
             for act in post_report.actions_taken:
                 print(f"[post-opt] {act}")
-            if post_report.issues:
+            if not post_report.passed or post_report.issues:
                 for issue in post_report.issues:
-                    print(f"[post-warn] {issue}")
-            else:
-                print(f"[post-opt] Video passed all quality checks ({post_report.width}x{post_report.height}, {post_report.duration_seconds:.1f}s, stereo {post_report.audio_sample_rate}Hz).")
+                    print(f"[post-error] {issue}")
+                raise RuntimeError(
+                    f"Post-render quality check failed for {output_path.name}: {'; '.join(post_report.issues)}"
+                )
+            print(f"[post-opt] Video passed all quality checks ({post_report.width}x{post_report.height}, {post_report.duration_seconds:.1f}s, stereo {post_report.audio_sample_rate}Hz).")
             rendered_outputs.append(output_path)
             if plat == "reel" and args.publish_instagram:
                 pub_info = publish_instagram_reel(output_path, ig_caption)

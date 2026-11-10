@@ -965,16 +965,18 @@ const DSAHashMapDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
 // ==========================================
 // 6. Comparison Screen (Dynamic Multi-Topic Battle)
 // ==========================================
-const EditorialComparison: React.FC<{beat: Beat; frame: number}> = ({beat, frame}) => {
+const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}> = ({beat, frame, topic = ''}) => {
   const enter = interpolate(frame, [0, 14], [0, 1], clamp);
   const barProgress = interpolate(frame, [10, 45], [0, 1], clamp);
   const pulse = 0.85 + 0.15 * Math.sin(frame / 6);
 
+  const topicLower = (topic || '').toLowerCase();
   const isScaling =
-    (beat.spoken_text || '').toLowerCase().includes('server') ||
-    (beat.title || '').toLowerCase().includes('vertical') ||
-    (beat.spoken_text || '').toLowerCase().includes('scale');
+    topicLower.includes('horizontal scaling') ||
+    topicLower.includes('vertical scaling') ||
+    beat.id === 'vertical_limits';
   const isDSA =
+    topicLower.includes('two sum') ||
     (beat.spoken_text || '').toLowerCase().includes('brute') ||
     (beat.spoken_text || '').toLowerCase().includes('o of n') ||
     (beat.title || '').toLowerCase().includes('brute');
@@ -2635,6 +2637,112 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
         </div>
       )}
 
+      {/* Interactive Token Bucket & HTTP 429 Traffic Gate when topic involves Rate Limiting */}
+      {(topic.toLowerCase().includes('rate') ||
+        topic.toLowerCase().includes('limit') ||
+        (beat.spoken_text || '').toLowerCase().includes('bucket') ||
+        (beat.spoken_text || '').toLowerCase().includes('429')) && (
+        <div
+          style={{
+            width: 880,
+            padding: '20px 26px',
+            marginBottom: 20,
+            borderRadius: 22,
+            background: 'rgba(14, 18, 26, 0.94)',
+            border: `2px solid ${C.gold}88`,
+            boxShadow: `0 12px 40px rgba(0,0,0,0.6), 0 0 35px ${C.goldGlow}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            opacity: enter,
+          }}
+        >
+          {/* Left: Incoming Burst Traffic */}
+          <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted, letterSpacing: 1.5}}>INCOMING BURST</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 24, fontWeight: 900, color: C.white}}>⚡ 10,000 req/s</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold}}>API Gateway Filter</div>
+          </div>
+
+          {/* Center: Animated 5-Token Bucket */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '12px 22px',
+              borderRadius: 16,
+              background: 'rgba(255,255,255,0.04)',
+              border: `1.5px solid ${C.blue}88`,
+            }}
+          >
+            <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.blue, fontWeight: 800, marginBottom: 8}}>
+              TOKEN BUCKET (CAPACITY: 5 · REFILL: +2/s)
+            </div>
+            <div style={{display: 'flex', gap: 10}}>
+              {[0, 1, 2, 3, 4].map((slot) => {
+                const activeTokens = 5 - Math.floor((frame % 90) / 18);
+                const hasToken = slot < activeTokens;
+                return (
+                  <div
+                    key={slot}
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: hasToken ? C.gold : 'rgba(255,255,255,0.08)',
+                      border: `2px solid ${hasToken ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
+                      boxShadow: hasToken ? `0 0 14px ${C.gold}` : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontFamily: FONT_MONO,
+                      fontSize: 13,
+                      fontWeight: 900,
+                      color: hasToken ? '#000' : C.muted,
+                    }}
+                  >
+                    {hasToken ? 'T' : '·'}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Live HTTP 200 vs HTTP 429 Gate Status */}
+          <div style={{display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end'}}>
+            <div
+              style={{
+                padding: '6px 14px',
+                borderRadius: 99,
+                background: 'rgba(63, 185, 80, 0.16)',
+                border: `1.5px solid ${C.green}`,
+                fontFamily: FONT_MONO,
+                fontSize: 13,
+                fontWeight: 800,
+                color: C.green,
+              }}
+            >
+              ✔ TOKEN PRESENT → 200 OK
+            </div>
+            <div
+              style={{
+                padding: '6px 14px',
+                borderRadius: 99,
+                background: 'rgba(255, 77, 77, 0.16)',
+                border: `1.5px solid ${C.red}`,
+                fontFamily: FONT_MONO,
+                fontSize: 13,
+                fontWeight: 800,
+                color: C.red,
+              }}
+            >
+              ✕ BUCKET EMPTY → HTTP 429
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Interactive Cards Stack with Live Flow Connectors */}
       <div style={{width: 880, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, opacity: enter}}>
         {items.slice(0, 3).map((item, idx) => {
@@ -2975,7 +3083,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
   const isDSA = (plan.topic_family || '').toLowerCase().includes('dsa') || topicLower.includes('sum');
   const isKafka = topicLower.includes('kafka');
   const isRAG = topicLower.includes('rag') || topicLower.includes('retrieval') || topicLower.includes('vector');
-  const isScaling = topicLower.includes('scaling') || topicLower.includes('scale');
+  const isScaling = topicLower.includes('horizontal scaling') || topicLower.includes('vertical scaling');
 
   // 1. Summary / Outro
   if (beat.type === 'summary' || beat.id === 'summary') {
@@ -2995,7 +3103,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
   // 4. Scaling beats
   if (isScaling) {
     if (beat.type === 'comparison' || beat.id === 'vertical_limits') {
-      return <EditorialComparison beat={beat} frame={frame} />;
+      return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
     }
     return <HorizontalScalingDiagram beat={beat} frame={frame} />;
   }
@@ -3009,7 +3117,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
       return <DSAHashMapDiagram beat={beat} frame={frame} />;
     }
     if (beat.id === 'baseline' || beat.id === 'complexity' || beat.type === 'comparison') {
-      return <EditorialComparison beat={beat} frame={frame} />;
+      return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
     }
     if (beat.id === 'idea' || beat.type === 'metric_callout') {
       return <DSAHashMapDiagram beat={beat} frame={frame} />;
@@ -3030,7 +3138,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
 
   // 7. Universal fallback for ANY new topic
   if (beat.type === 'comparison') {
-    return <EditorialComparison beat={beat} frame={frame} />;
+    return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
   }
   return <UniversalTopicDiagram beat={beat} topic={plan.topic} frame={frame} />;
 };
@@ -3064,6 +3172,44 @@ const BenchmarkBeatScene: React.FC<{beat: Beat; plan: Plan; beatIndex: number; t
   return (
     <AbsoluteFill style={{background: C.bg, opacity}}>
       <BenchmarkBackdrop frame={frame} />
+
+      {/* Render AI-generated supporting image when beat.asset_file is present */}
+      {beat.asset_file ? (
+        <>
+          <Img
+            src={staticFile(beat.asset_file)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              opacity: 0.14,
+              filter: 'blur(10px) saturate(1.2)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              right: 56,
+              bottom: 340,
+              width: 240,
+              height: 150,
+              borderRadius: 18,
+              overflow: 'hidden',
+              border: `1.5px solid ${C.gold}88`,
+              boxShadow: '0 12px 35px rgba(0,0,0,0.75)',
+              zIndex: 35,
+            }}
+          >
+            <Img
+              src={staticFile(beat.asset_file)}
+              style={{width: '100%', height: '100%', objectFit: 'cover'}}
+            />
+          </div>
+        </>
+      ) : null}
+
       <BenchmarkVisualContent beat={beat} frame={frame} plan={plan} />
 
       {/* @backendlore Benchmark Top Chrome Header + Progress Bar + Status Pill */}

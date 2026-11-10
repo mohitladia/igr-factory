@@ -49,17 +49,20 @@ def inspect_and_optimize_video(
     issues: list[str] = []
     actions_taken: list[str] = []
 
-    # 1. Probe streams with ffprobe
-    cmd = [
-        "ffprobe",
-        "-v", "error",
-        "-show_entries", "stream=codec_type,width,height,duration,channels,sample_rate",
-        "-of", "json",
-        str(video_path),
-    ]
-    try:
+    # 1. Helper to probe streams with ffprobe
+    def _probe_file(target: Path) -> dict[str, Any]:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "stream=codec_type,width,height,duration,channels,sample_rate",
+            "-of", "json",
+            str(target),
+        ]
         proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        probe_data = json.loads(proc.stdout)
+        return json.loads(proc.stdout)
+
+    try:
+        probe_data = _probe_file(video_path)
     except Exception as exc:
         return PostRenderReport(
             passed=False,
@@ -90,6 +93,40 @@ def inspect_and_optimize_video(
             actions_taken=[],
         )
 
+    has_audio = audio_stream is not None
+
+    # 2. Instagram Loudness Normalization (EBU R128 standard: target -14 LUFS)
+    # Explicitly lock sample rate to 48000 Hz (-ar 48000) because FFmpeg's loudnorm filter
+    # upsamples internally to 96kHz/192kHz if -ar is omitted.
+    if has_audio and auto_normalize_audio:
+        temp_optimized = video_path.with_name(f"{video_path.stem}_opt.mp4")
+        norm_cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", str(video_path),
+            "-c:v", "copy",
+            "-filter:a", "loudnorm=I=-14:TP=-1.0:LRA=11",
+            "-ar", "48000",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            str(temp_optimized),
+        ]
+        try:
+            norm_proc = subprocess.run(norm_cmd, capture_output=True, text=True, check=False)
+            if norm_proc.returncode == 0 and temp_optimized.exists() and temp_optimized.stat().st_size > 10_000:
+                temp_optimized.replace(video_path)
+                actions_taken.append("Audio normalized to Instagram Reel standard (-14 LUFS, 48kHz) via FFmpeg lossless video remux.")
+                # Re-probe the actual final file on disk so reported stats match 100%
+                probe_data = _probe_file(video_path)
+                streams = probe_data.get("streams", [])
+                video_stream = next((s for s in streams if s.get("codec_type") == "video"), video_stream)
+                audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), audio_stream)
+            else:
+                if temp_optimized.exists():
+                    temp_optimized.unlink(missing_ok=True)
+        except Exception as e:
+            actions_taken.append(f"Audio normalization skipped: {e}")
+
     v_width = int(video_stream.get("width", 0))
     v_height = int(video_stream.get("height", 0))
     v_duration = float(video_stream.get("duration", 0.0))
@@ -108,32 +145,6 @@ def inspect_and_optimize_video(
 
     if not has_audio:
         issues.append("No audio track detected in final MP4!")
-
-    # 2. Instagram Loudness Normalization (EBU R128 standard: target -14 LUFS)
-    # Applied quickly with FFmpeg stream copy for video (-c:v copy) so it runs in ~1-2s!
-    if has_audio and auto_normalize_audio:
-        temp_optimized = video_path.with_name(f"{video_path.stem}_opt.mp4")
-        norm_cmd = [
-            "ffmpeg",
-            "-y",
-            "-i", str(video_path),
-            "-c:v", "copy",
-            "-filter:a", "loudnorm=I=-14:TP=-1.0:LRA=11",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            str(temp_optimized),
-        ]
-        try:
-            norm_proc = subprocess.run(norm_cmd, capture_output=True, text=True, check=False)
-            if norm_proc.returncode == 0 and temp_optimized.exists() and temp_optimized.stat().st_size > 10_000:
-                # Replace original with the loudness-optimized version
-                temp_optimized.replace(video_path)
-                actions_taken.append("Audio normalized to Instagram Reel standard (-14 LUFS) via FFmpeg lossless video remux.")
-            else:
-                if temp_optimized.exists():
-                    temp_optimized.unlink(missing_ok=True)
-        except Exception as e:
-            actions_taken.append(f"Audio normalization skipped: {e}")
 
     passed = len(issues) == 0
     return PostRenderReport(
