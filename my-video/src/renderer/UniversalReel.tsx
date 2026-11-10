@@ -983,6 +983,7 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
 
   const n0 = beat.nodes && beat.nodes[0];
   const n1 = beat.nodes && beat.nodes[1];
+  const n2 = beat.nodes && beat.nodes[2];
 
   const titleText = isScaling
     ? 'Architecture: *Vertical vs Horizontal*'
@@ -990,16 +991,24 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
       ? 'Complexity: *Brute Force vs HashMap*'
       : `*${beat.title || 'Naive vs Optimized'}*`;
 
-  const card1Title = n0?.label ? n0.label.toUpperCase() : isScaling ? 'VERTICAL SCALING' : 'BOTTLENECK APPROACH';
-  const card1Big = isScaling ? 'SPOF' : isDSA ? 'O(n²)' : 'SLOW ✕';
+  const card1Title = n0?.label ? n0.label.toUpperCase() : isScaling ? 'VERTICAL SCALING' : 'NAIVE BOTTLENECK';
+  const card1Big = isScaling
+    ? 'SPOF'
+    : isDSA
+      ? 'O(n²)'
+      : (n2?.label ? n2.label.toUpperCase().slice(0, 12) : 'CRASH ✕');
   const card1Sub =
     n0?.detail ||
     (isScaling
       ? 'Single huge server. Expensive hardware ceiling & 100% outage risk!'
-      : 'High latency, context overload & expensive bottleneck under scale.');
+      : 'High latency, overload & expensive bottleneck under scale.');
 
   const card2Title = n1?.label ? n1.label.toUpperCase() : isScaling ? 'HORIZONTAL SCALING' : 'PRODUCTION ENGINE';
-  const card2Big = isScaling ? '99.999%' : isDSA ? 'O(n)' : 'FAST ✔';
+  const card2Big = isScaling
+    ? '99.999%'
+    : isDSA
+      ? 'O(n)'
+      : (beat.metric ? beat.metric.slice(0, 12) : 'SCALABLE ✔');
   const card2Sub =
     n1?.detail ||
     (isScaling
@@ -2657,14 +2666,18 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
             opacity: enter,
           }}
         >
-          {/* Left: Incoming Burst Traffic */}
+          {/* Left: Incoming Burst Traffic (Driven by beat.nodes[0]) */}
           <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted, letterSpacing: 1.5}}>INCOMING BURST</div>
-            <div style={{fontFamily: FONT_MONO, fontSize: 24, fontWeight: 900, color: C.white}}>⚡ 10,000 req/s</div>
-            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold}}>API Gateway Filter</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted, letterSpacing: 1.5}}>
+              {(items[0]?.label || 'INCOMING TRAFFIC').toUpperCase().slice(0, 20)}
+            </div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 22, fontWeight: 900, color: C.white}}>
+              ⚡ {(items[0]?.detail || beat.metric || 'HIGH SCALE').slice(0, 22)}
+            </div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold}}>{topic} Gatekeeper</div>
           </div>
 
-          {/* Center: Animated 5-Token Bucket */}
+          {/* Center: Animated 5-Token Bucket (Driven by beat.nodes[1]) */}
           <div
             style={{
               display: 'flex',
@@ -2677,7 +2690,7 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
             }}
           >
             <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.blue, fontWeight: 800, marginBottom: 8}}>
-              TOKEN BUCKET (CAPACITY: 5 · REFILL: +2/s)
+              {(items[1]?.label || 'TOKEN BUCKET').toUpperCase()} · {(items[1]?.detail || beat.metric || 'ACTIVE').toUpperCase().slice(0, 22)}
             </div>
             <div style={{display: 'flex', gap: 10}}>
               {[0, 1, 2, 3, 4].map((slot) => {
@@ -2709,7 +2722,7 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
             </div>
           </div>
 
-          {/* Right: Live HTTP 200 vs HTTP 429 Gate Status */}
+          {/* Right: Live Gate Status (Driven by beat.nodes[2]) */}
           <div style={{display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end'}}>
             <div
               style={{
@@ -2723,7 +2736,7 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
                 color: C.green,
               }}
             >
-              ✔ TOKEN PRESENT → 200 OK
+              ✔ ALLOWED → 200 OK
             </div>
             <div
               style={{
@@ -2737,7 +2750,7 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
                 color: C.red,
               }}
             >
-              ✕ BUCKET EMPTY → HTTP 429
+              ✕ {(items[2]?.detail || 'LIMIT EXCEEDED → 429').toUpperCase().slice(0, 22)}
             </div>
           </div>
         </div>

@@ -98,11 +98,16 @@ def write_instagram_metadata(plan: dict[str, Any], destination: Path) -> str:
     return caption
 
 
-def write_youtube_shorts_metadata(plan: dict[str, Any], destination: Path) -> dict[str, Any]:
+def write_youtube_shorts_metadata(
+    plan: dict[str, Any],
+    destination: Path,
+    cheatsheet_url: str | None = None,
+) -> dict[str, Any]:
     topic = plan.get("topic", "System Design")
     beats = plan.get("beats", [])
     hook_text = beats[0].get("spoken_text", "") if beats else ""
     slug_tag = "".join(ch for ch in topic if ch.isalnum()).lower()
+    pdf_link = (cheatsheet_url or plan.get("cheatsheet_url") or os.getenv("CHEATSHEET_DEFAULT_URL", "")).strip()
     cursor_sec = 0.0
     chapters = []
     for b in beats:
@@ -111,8 +116,10 @@ def write_youtube_shorts_metadata(plan: dict[str, Any], destination: Path) -> di
         chapters.append(f"{mm:02d}:{ss:02d} - {b.get('title', 'Concept')}")
         cursor_sec += float(b.get("audio_duration_seconds") or 8.0)
 
+    pdf_banner = f"📄 Free {topic} PDF Interview Cheat Sheet: {pdf_link}\n\n" if pdf_link else ""
     title = f"{topic} Explained in 60 Seconds! 🔥 (Interview Trick) #shorts #systemdesign"[:100]
     description = (
+        f"{pdf_banner}"
         f"{hook_text}\n\n"
         f"In this Hinglish System Design & Backend Engineering Short, we break down {topic} with real production architecture and motion graphics:\n"
         + "\n".join(chapters)
@@ -131,7 +138,11 @@ def write_youtube_shorts_metadata(plan: dict[str, Any], destination: Path) -> di
         "software architecture",
         "tech shorts india",
     ]
-    pinned = f"📌 Free {topic} PDF Interview Cheat Sheet & Architecture Notes! Subscribe & reply '{topic.upper()}' below to get the link! 🚀"
+    pinned = (
+        f"📌 Free {topic} PDF Interview Cheat Sheet & Architecture Notes: {pdf_link} 🚀"
+        if pdf_link
+        else f"📌 Free {topic} PDF Interview Cheat Sheet & Architecture Notes! Subscribe & reply '{topic.upper()}' below to get the link! 🚀"
+    )
 
     meta_text = (
         f"=== YOUTUBE SHORTS UPLOAD METADATA ===\n\n"
@@ -293,19 +304,87 @@ def auto_dm_keyword_comments(keyword: str, cheatsheet_url: str, media_id: str | 
     return {"media_id": media_id, "checked": len(comments), "dms_sent": dms_sent}
 
 
-def upload_youtube_short(video_path: Path, plan: dict[str, Any]) -> dict[str, Any]:
+def upload_public_asset(file_path: Path, mime_type: str = "application/pdf") -> str:
+    """Uploads a local PDF Cheat Sheet or MP4 to catbox.moe and returns a public HTTPS URL."""
+    with file_path.open("rb") as fh:
+        resp = requests.post(
+            "https://catbox.moe/user/api.php",
+            data={"reqtype": "fileupload"},
+            files={"fileToUpload": (file_path.name, fh, mime_type)},
+            timeout=120,
+        )
+        if resp.status_code == 200 and resp.text.strip().startswith("https://"):
+            return resp.text.strip()
+    raise RuntimeError(f"Could not upload {file_path.name} to public storage.")
+
+
+def refresh_youtube_access_token() -> str:
     """
-    Upload the rendered YouTube Short MP4 directly to YouTube via YouTube Data API v3
-    using YOUTUBE_ACCESS_TOKEN in .env.
+    Exchanges YOUTUBE_REFRESH_TOKEN in .env for a fresh YOUTUBE_ACCESS_TOKEN
+    via Google OAuth Playground's token refresh endpoint so uploads never fail with 401.
+    """
+    refresh_tok = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+    if not refresh_tok:
+        raise RuntimeError("Missing YOUTUBE_REFRESH_TOKEN in .env for automatic token refresh.")
+    resp = requests.post(
+        "https://developers.google.com/oauthplayground/refreshAccessToken",
+        json={"token_uri": "https://oauth2.googleapis.com/token", "refresh_token": refresh_tok},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    new_token = str(resp.json().get("access_token") or "").strip()
+    if not new_token:
+        raise RuntimeError(f"OAuth token refresh did not return an access_token: {resp.text}")
+    os.environ["YOUTUBE_ACCESS_TOKEN"] = new_token
+    return new_token
+
+
+def upload_youtube_short(
+    video_path: Path,
+    plan: dict[str, Any],
+    pdf_path: Path | None = None,
+    cover_path: Path | None = None,
+) -> dict[str, Any]:
+    """
+    Upload the rendered YouTube Short MP4 directly to YouTube via YouTube Data API v3,
+    automatically refreshing YOUTUBE_ACCESS_TOKEN if expired, attaching the public
+    PDF Cheat Sheet download link in the description, and setting the custom cover thumbnail.
     """
     yt_token = os.getenv("YOUTUBE_ACCESS_TOKEN", "").strip()
+    if not yt_token and os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip():
+        yt_token = refresh_youtube_access_token()
     if not yt_token:
         raise RuntimeError(
             "Missing YOUTUBE_ACCESS_TOKEN in .env. Add a valid OAuth2 access token with "
             "'https://www.googleapis.com/auth/youtube.upload' scope to auto-upload Shorts."
         )
 
-    meta = write_youtube_shorts_metadata(plan, video_path.with_name(f"{video_path.stem}_youtube_metadata.txt"))
+    # Auto-discover matching *_cheatsheet.pdf and *_cover.png if not explicitly passed
+    base_stem = video_path.stem.replace("_shorts", "").replace("_reel", "")
+    if pdf_path is None:
+        candidate_pdf = video_path.with_name(f"{base_stem}_cheatsheet.pdf")
+        if candidate_pdf.exists():
+            pdf_path = candidate_pdf
+    if cover_path is None:
+        candidate_cover = video_path.with_name(f"{base_stem}_cover.png")
+        if candidate_cover.exists():
+            cover_path = candidate_cover
+
+    cheatsheet_url = str(plan.get("cheatsheet_url") or "").strip()
+    if not cheatsheet_url and pdf_path and pdf_path.exists():
+        try:
+            print(f"[youtube] Uploading {pdf_path.name} for public download link in description...")
+            cheatsheet_url = upload_public_asset(pdf_path, "application/pdf")
+            plan["cheatsheet_url"] = cheatsheet_url
+            print(f"[youtube] Public PDF Cheat Sheet link ready: {cheatsheet_url}")
+        except Exception as pdf_exc:
+            print(f"[youtube-warn] Could not stage PDF link ({pdf_exc})")
+
+    meta = write_youtube_shorts_metadata(
+        plan,
+        video_path.with_name(f"{base_stem}_youtube_metadata.txt"),
+        cheatsheet_url=cheatsheet_url,
+    )
     privacy = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
     metadata_body = {
         "snippet": {
@@ -322,18 +401,24 @@ def upload_youtube_short(video_path: Path, plan: dict[str, Any]) -> dict[str, An
         },
     }
 
-    # Resumable upload initiation
-    init_resp = requests.post(
-        "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
-        headers={
-            "Authorization": f"Bearer {yt_token}",
-            "Content-Type": "application/json; charset=UTF-8",
-            "X-Upload-Content-Length": str(video_path.stat().st_size),
-            "X-Upload-Content-Type": "video/mp4",
-        },
-        data=json.dumps(metadata_body),
-        timeout=60,
-    )
+    def _initiate_resumable(token: str) -> requests.Response:
+        return requests.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Length": str(video_path.stat().st_size),
+                "X-Upload-Content-Type": "video/mp4",
+            },
+            data=json.dumps(metadata_body),
+            timeout=60,
+        )
+
+    init_resp = _initiate_resumable(yt_token)
+    if init_resp.status_code == 401 and os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip():
+        print("[youtube] Access token expired (401); auto-refreshing via YOUTUBE_REFRESH_TOKEN...")
+        yt_token = refresh_youtube_access_token()
+        init_resp = _initiate_resumable(yt_token)
     init_resp.raise_for_status()
     upload_url = init_resp.headers.get("Location")
     if not upload_url:
@@ -349,4 +434,29 @@ def upload_youtube_short(video_path: Path, plan: dict[str, Any]) -> dict[str, An
     up_resp.raise_for_status()
     video_id = up_resp.json().get("id")
     print(f"[youtube] Short uploaded! URL: https://youtube.com/shorts/{video_id}")
-    return {"video_id": video_id, "url": f"https://youtube.com/shorts/{video_id}"}
+
+    # Optional Step: Upload custom cover thumbnail via thumbnails.set API
+    thumbnail_set = False
+    if video_id and cover_path and cover_path.exists():
+        try:
+            with cover_path.open("rb") as img_fh:
+                thumb_resp = requests.post(
+                    f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={video_id}",
+                    headers={"Authorization": f"Bearer {yt_token}", "Content-Type": "image/png"},
+                    data=img_fh,
+                    timeout=60,
+                )
+            if thumb_resp.status_code in {200, 201}:
+                thumbnail_set = True
+                print(f"[youtube] Custom thumbnail attached ({cover_path.name})")
+            else:
+                print(f"[youtube-note] Custom thumbnail API returned {thumb_resp.status_code} (Shorts use vertical frame or require youtube.force-ssl scope)")
+        except Exception as th_exc:
+            print(f"[youtube-note] Thumbnail attach skipped: {th_exc}")
+
+    return {
+        "video_id": video_id,
+        "url": f"https://youtube.com/shorts/{video_id}",
+        "cheatsheet_url": cheatsheet_url,
+        "thumbnail_set": thumbnail_set,
+    }
