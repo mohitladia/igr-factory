@@ -3182,10 +3182,33 @@ export const UniversalReel: React.FC<Props> = ({plan}) => {
         const from = cursor;
         const duration = Math.max(20, Number(beat.duration_frames || 90));
         cursor += duration;
+        const isSummary = beat.id === 'summary' || beat.type === 'summary';
+        const isProblem =
+          beat.id === 'problem' ||
+          beat.type === 'comparison' ||
+          beat.id === 'vertical_limits' ||
+          (beat.id === 'hook' && plan.topic.toLowerCase().includes('rag'));
+
         return (
           <Sequence key={beat.id} from={from} durationInFrames={duration}>
             <BenchmarkBeatScene beat={beat} plan={plan} beatIndex={idx} totalBeats={plan.beats.length} />
             {beat.audio_file ? <Audio src={staticFile(beat.audio_file)} /> : null}
+            {/* Subtle transition whoosh on scene changes */}
+            {idx > 0 ? <Audio src={staticFile('audio/sfx_whoosh.wav')} volume={0.22} /> : null}
+            {/* Timed accent SFX synced with visual stamps/callouts */}
+            {isSummary ? (
+              <Sequence from={8} durationInFrames={Math.max(10, duration - 8)}>
+                <Audio src={staticFile('audio/sfx_chime.wav')} volume={0.28} />
+              </Sequence>
+            ) : isProblem ? (
+              <Sequence from={18} durationInFrames={Math.max(10, duration - 18)}>
+                <Audio src={staticFile('audio/sfx_stamp.wav')} volume={0.25} />
+              </Sequence>
+            ) : (
+              <Sequence from={16} durationInFrames={Math.max(10, duration - 16)}>
+                <Audio src={staticFile('audio/sfx_pop.wav')} volume={0.22} />
+              </Sequence>
+            )}
           </Sequence>
         );
       })}

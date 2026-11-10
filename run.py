@@ -15,6 +15,7 @@ from ai_engine.critic import evaluate_plan_quality
 from ai_engine.demo_plan import build_demo_plan
 from ai_engine.plan_generator import generate_plan, validate_and_normalize
 from ai_engine.post_inspector import inspect_and_optimize_video
+from audio_engine.sfx_generator import ensure_sfx_assets
 from audio_engine.voice_generator import generate_beat_audio
 from publisher.social_publisher import (
     auto_dm_keyword_comments,
@@ -25,6 +26,7 @@ from publisher.social_publisher import (
 )
 from renderer.timeline import write_render_plan
 from visual_engine.build_assets import build_optional_assets
+from visual_engine.cheatsheet_generator import generate_cheatsheet_and_cover
 
 ROOT = Path(__file__).resolve().parent
 
@@ -120,13 +122,22 @@ def main() -> int:
         (run_dir / "plan_before_audio.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[plan] {len(plan['beats'])} beats generated")
 
-        print("\n[2/5] Generating voice and word timings...")
+        print("\n[2/5] Generating voice, word timings & studio SFX...")
+        ensure_sfx_assets(ROOT)
         plan = generate_beat_audio(plan, ROOT, run_dir, voice, rate, fps)
         print(f"[audio] total timeline: {plan['duration_seconds']}s")
 
-        print("\n[3/5] Generating optional supporting visuals...")
+        print("\n[3/5] Generating PDF Interview Cheat Sheet, 9:16 Cover & supporting visuals...")
+        pdf_path = ROOT / "output" / "final" / f"{stamp}_{slug}_cheatsheet.pdf"
+        cover_path = ROOT / "output" / "final" / f"{stamp}_{slug}_cover.png"
+        try:
+            generate_cheatsheet_and_cover(plan, ROOT, run_dir, pdf_path, cover_path)
+            print(f"[cheatsheet] PDF Interview Notes: {pdf_path}")
+            print(f"[cover] 9:16 Reel/Short Cover Thumbnail: {cover_path}")
+        except Exception as cs_exc:
+            print(f"[cheatsheet-warn] Could not render PDF/Cover ({cs_exc})")
         if args.skip_images:
-            print("[visuals] skipped by command line")
+            print("[visuals] optional AI images skipped by command line")
         else:
             build_optional_assets(plan, ROOT, run_dir)
 
