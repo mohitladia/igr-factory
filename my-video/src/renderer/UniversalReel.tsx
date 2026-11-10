@@ -37,6 +37,7 @@ type Plan = {
   topic: string;
   topic_family?: string;
   teaching_format?: string;
+  platform?: 'reel' | 'shorts';
   fps: number;
   width: number;
   height: number;
@@ -2717,16 +2718,22 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
 // ==========================================
 // 7. Cheat Sheet Outro Card (Benchmark 1:1)
 // ==========================================
-const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number}> = ({topic, beat, frame}) => {
+const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; platform?: 'reel' | 'shorts'}> = ({
+  topic,
+  beat,
+  frame,
+  platform = 'reel',
+}) => {
   const enter = interpolate(frame, [0, 14], [0, 1], clamp);
   const buttonPulse = 1 + 0.04 * Math.sin(frame / 10);
+  const isShorts = platform === 'shorts';
 
   const isDSA = topic.toLowerCase().includes('sum') || topic.toLowerCase().includes('two');
   const isScaling = topic.toLowerCase().includes('scaling') || topic.toLowerCase().includes('scale');
   const isKafka = topic.toLowerCase().includes('kafka');
   const dynamicBullets =
     beat.nodes && beat.nodes.length > 0
-      ? beat.nodes.map((n) => `${n.label.toLowerCase()} (${n.detail.toLowerCase()})`).join(' · ')
+      ? beat.nodes.map((n) => `${n.label.toLowerCase()} (${(n.detail || '').toLowerCase()})`).join(' · ')
       : `${topic.toLowerCase()} · architecture · data flow · scaling · trade-offs`;
   const bulletText = isDSA
     ? 'array · hashmap · complement · two pointers · time O(n) · space O(n)'
@@ -2823,31 +2830,31 @@ const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number}> 
             fontWeight: 600,
           }}
         >
-          Instagram Reel Factory
+          {isShorts ? 'YouTube Shorts · Engineering' : 'Instagram Reel Factory'}
         </div>
       </div>
 
-      {/* + Follow Button */}
+      {/* Platform-Aware CTA Button (+ Follow for Reels | ▶ Subscribe for YouTube Shorts) */}
       <div
         style={{
           marginTop: 45,
           padding: '18px 65px',
           borderRadius: 999,
-          background: C.gold,
-          color: '#0A0A0A',
+          background: isShorts ? '#FF0033' : C.gold,
+          color: isShorts ? '#FFFFFF' : '#0A0A0A',
           fontFamily: FONT_SANS,
           fontSize: 28,
           fontWeight: 900,
           letterSpacing: 0.5,
-          boxShadow: `0 12px 40px ${C.goldGlow}`,
+          boxShadow: isShorts ? '0 12px 45px rgba(255, 0, 51, 0.45)' : `0 12px 40px ${C.goldGlow}`,
           transform: `scale(${buttonPulse})`,
           opacity: enter,
         }}
       >
-        + Follow
+        {isShorts ? '▶ Subscribe' : '+ Follow'}
       </div>
 
-      {/* Simulated Instagram Comment Bar */}
+      {/* Platform-Aware Comment / Pinned Comment Bar */}
       <div
         style={{
           marginTop: 32,
@@ -2858,14 +2865,28 @@ const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number}> 
           border: '1px solid rgba(255, 255, 255, 0.14)',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: isShorts ? 'center' : 'flex-start',
           gap: 14,
           opacity: enter,
         }}
       >
-        <span style={{fontFamily: FONT_SANS, fontSize: 18, color: C.muted}}>Add a comment...</span>
-        <span style={{fontFamily: FONT_MONO, fontSize: 19, color: C.white, fontWeight: 800}}>
-          {topic.toUpperCase().replace(/\s+/g, '')}
-        </span>
+        {isShorts ? (
+          <>
+            <span style={{fontFamily: FONT_SANS, fontSize: 18, color: C.gold, fontWeight: 700}}>
+              📌 Pinned Comment:
+            </span>
+            <span style={{fontFamily: FONT_MONO, fontSize: 18, color: C.white, fontWeight: 800}}>
+              FREE {topic.toUpperCase()} PDF NOTES
+            </span>
+          </>
+        ) : (
+          <>
+            <span style={{fontFamily: FONT_SANS, fontSize: 18, color: C.muted}}>Add a comment...</span>
+            <span style={{fontFamily: FONT_MONO, fontSize: 19, color: C.white, fontWeight: 800}}>
+              {topic.toUpperCase().replace(/\s+/g, '')}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2942,7 +2963,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
 
   // 1. Summary / Outro
   if (beat.type === 'summary' || beat.id === 'summary') {
-    return <CheatsheetOutroCard topic={plan.topic} beat={beat} frame={frame} />;
+    return <CheatsheetOutroCard topic={plan.topic} beat={beat} frame={frame} platform={plan.platform} />;
   }
 
   // 2. RAG Interactive Motion Graphics Engine (1:1 @backendlore benchmark)
@@ -3052,7 +3073,7 @@ const BenchmarkBeatScene: React.FC<{beat: Beat; plan: Plan; beatIndex: number; t
               color: C.white,
             }}
           >
-            ALGO REELS
+            {plan.platform === 'shorts' ? '▶ ALGO SHORTS' : 'ALGO REELS'}
           </div>
           <div
             style={{

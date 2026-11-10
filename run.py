@@ -23,13 +23,45 @@ ROOT = Path(__file__).resolve().parent
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate a universal, JSON-driven technical Instagram Reel.")
+    parser = argparse.ArgumentParser(description="Generate a universal, JSON-driven technical Instagram Reel & YouTube Short.")
     parser.add_argument("--topic", type=str, help="Topic to explain, e.g. Apache Kafka")
     parser.add_argument("--duration", type=int, default=None, help="Target duration in seconds (default from .env or 70)")
+    parser.add_argument("--platform", type=str, choices=["reel", "shorts", "both"], default="reel", help="Target platform: reel (Instagram), shorts (YouTube Shorts), or both")
     parser.add_argument("--demo", action="store_true", help="Use topic-aware sample plan without the LLM API")
     parser.add_argument("--plan-only", action="store_true", help="Generate plan/audio/assets but do not render MP4")
     parser.add_argument("--skip-images", action="store_true", help="Skip optional hosted AI image generation")
     return parser.parse_args()
+
+
+def write_youtube_shorts_metadata(plan: dict, destination: Path) -> None:
+    topic = plan.get("topic", "System Design")
+    beats = plan.get("beats", [])
+    hook_text = beats[0].get("spoken_text", "") if beats else ""
+    slug_tag = "".join(ch for ch in topic if ch.isalnum()).lower()
+    cursor_sec = 0.0
+    chapters = []
+    for b in beats:
+        mm = int(cursor_sec // 60)
+        ss = int(cursor_sec % 60)
+        chapters.append(f"{mm:02d}:{ss:02d} - {b.get('title', 'Concept')}")
+        cursor_sec += float(b.get("audio_duration_seconds") or 8.0)
+
+    meta_text = (
+        f"=== YOUTUBE SHORTS UPLOAD METADATA ===\n\n"
+        f"TITLE (Copy-Paste):\n"
+        f"{topic} Explained in 60 Seconds! 🔥 (Interview Trick) #shorts #systemdesign #{slug_tag}\n\n"
+        f"DESCRIPTION (Copy-Paste):\n"
+        f"{hook_text}\n\n"
+        f"In this Hinglish System Design & Backend Engineering Short, we break down {topic} with real production architecture and motion graphics:\n"
+        + "\n".join(chapters)
+        + f"\n\n#shorts #youtubeshorts #{slug_tag} #systemdesign #backendengineering #codinginterview #softwareengineering #hinglish #techshorts\n\n"
+        f"PINNED COMMENT (Copy-Paste):\n"
+        f"📌 Free {topic} PDF Interview Cheat Sheet & Architecture Notes! Subscribe & reply '{topic.upper()}' below to get the link! 🚀\n\n"
+        f"TAGS (Copy-Paste):\n"
+        f"{topic}, {topic} system design, {topic} explained in hindi, {topic} interview questions, system design hinglish, backend engineering shorts, coding interview preparation, software architecture, tech shorts india\n"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(meta_text, encoding="utf-8")
 
 
 def run_command(command: list[str], cwd: Path) -> None:
@@ -120,33 +152,50 @@ def main() -> int:
             build_optional_assets(plan, ROOT, run_dir)
 
         print("\n[4/5] Writing renderer plan...")
+        platforms_to_render = ["reel", "shorts"] if args.platform == "both" else [args.platform]
+        plan["platform"] = platforms_to_render[0]
         render_plan_path = ROOT / "my-video" / "src" / "data" / "plan.json"
         write_render_plan(plan, render_plan_path)
         (run_dir / "final_plan.json").write_text(render_plan_path.read_text(encoding="utf-8"), encoding="utf-8")
         print(f"[plan] {render_plan_path}")
+
+        if "shorts" in platforms_to_render:
+            yt_meta_path = ROOT / "output" / "final" / f"{stamp}_{slug}_youtube_metadata.txt"
+            write_youtube_shorts_metadata(plan, yt_meta_path)
+            write_youtube_shorts_metadata(plan, run_dir / "youtube_metadata.txt")
+            print(f"[youtube-meta] Generated ready-to-paste Title, Description, Pinned Comment & Tags: {yt_meta_path}")
 
         if args.plan_only:
             print("\n[done] Plan and audio are ready. Rendering skipped (--plan-only).")
             print(f"Run folder: {run_dir}")
             return 0
 
-        print("\n[5/6] Rendering vertical MP4 with Remotion...")
-        output_path = ROOT / "output" / "final" / f"{stamp}_{slug}.mp4"
-        render_video(ROOT, output_path)
+        rendered_outputs: list[Path] = []
+        for plat in platforms_to_render:
+            plan["platform"] = plat
+            write_render_plan(plan, render_plan_path)
+            suffix = "_shorts" if plat == "shorts" else ("" if args.platform == "reel" else "_reel")
+            output_path = ROOT / "output" / "final" / f"{stamp}_{slug}{suffix}.mp4"
+            print(f"\n[5/6] Rendering vertical MP4 ({plat.upper()}) with Remotion...")
+            render_video(ROOT, output_path)
 
-        print("\n[6/6] Inspecting video quality and optimizing audio...")
-        post_report = inspect_and_optimize_video(output_path, expected_width=width, expected_height=height)
-        for act in post_report.actions_taken:
-            print(f"[post-opt] {act}")
-        if post_report.issues:
-            for issue in post_report.issues:
-                print(f"[post-warn] {issue}")
-        else:
-            print(f"[post-opt] Video passed all quality checks ({post_report.width}x{post_report.height}, {post_report.duration_seconds:.1f}s, stereo {post_report.audio_sample_rate}Hz).")
+            print(f"\n[6/6] Inspecting video quality and optimizing audio ({plat.upper()})...")
+            post_report = inspect_and_optimize_video(output_path, expected_width=width, expected_height=height)
+            for act in post_report.actions_taken:
+                print(f"[post-opt] {act}")
+            if post_report.issues:
+                for issue in post_report.issues:
+                    print(f"[post-warn] {issue}")
+            else:
+                print(f"[post-opt] Video passed all quality checks ({post_report.width}x{post_report.height}, {post_report.duration_seconds:.1f}s, stereo {post_report.audio_sample_rate}Hz).")
+            rendered_outputs.append(output_path)
 
         print("\n" + "=" * 64)
-        print("REEL GENERATED SUCCESSFULLY")
-        print(f"Video: {output_path}")
+        print("GENERATION COMPLETED SUCCESSFULLY")
+        for out_file in rendered_outputs:
+            print(f"Video: {out_file}")
+        if "shorts" in platforms_to_render:
+            print(f"YouTube SEO Metadata: {ROOT / 'output' / 'final' / f'{stamp}_{slug}_youtube_metadata.txt'}")
         print(f"Plan:  {run_dir / 'final_plan.json'}")
         print("=" * 64)
         return 0
