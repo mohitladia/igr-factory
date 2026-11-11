@@ -5,6 +5,7 @@ import {
   Img,
   Sequence,
   interpolate,
+  spring,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
@@ -3030,7 +3031,7 @@ const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; p
 };
 
 // ==========================================
-// Minimalist Editorial Caption Overlay (Safe Zone)
+// Minimalist Editorial Caption Overlay (Safe Zone with Spring Physics)
 // ==========================================
 const BenchmarkCaption: React.FC<{beat: Beat; frame: number; fps: number}> = ({beat, frame, fps}) => {
   const words = beat.word_timings || [];
@@ -3055,29 +3056,44 @@ const BenchmarkCaption: React.FC<{beat: Beat; frame: number; fps: number}> = ({b
         alignItems: 'center',
         justifyContent: 'center',
         flexWrap: 'wrap',
-        gap: 12,
-        padding: '14px 24px',
-        borderRadius: 20,
+        gap: 14,
+        padding: '16px 28px',
+        borderRadius: 22,
         background: 'rgba(7, 7, 7, 0.88)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        border: '1.5px solid rgba(255, 255, 255, 0.12)',
         backdropFilter: 'blur(16px)',
+        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.65)',
         zIndex: 50,
       }}
     >
       {words.slice(first, first + 4).map((word, i) => {
         const isActive = first + i === active;
+        const wordStartFrame = Math.round(word.start * fps);
+        const wordAge = Math.max(0, frame - wordStartFrame);
+        const springBounce = isActive
+          ? spring({
+              frame: wordAge,
+              fps,
+              config: { damping: 10, stiffness: 240, mass: 0.5 },
+            })
+          : 0;
+        const scale = isActive ? 1 + springBounce * 0.14 : 1;
+
         return (
           <span
             key={`${first + i}-${word.start}`}
             style={{
               fontFamily: FONT_SANS,
-              fontSize: 34,
-              fontWeight: 800,
+              fontSize: 35,
+              fontWeight: 900,
               color: isActive ? C.gold : C.white,
               opacity: isActive ? 1 : 0.65,
-              textShadow: isActive ? `0 0 20px ${C.goldGlow}` : 'none',
-              transform: isActive ? 'scale(1.04)' : 'scale(1)',
-              transition: 'all 0.1s ease',
+              textShadow: isActive
+                ? `0 0 24px ${C.goldGlow}, 0 2px 10px rgba(0,0,0,0.8)`
+                : '0 2px 8px rgba(0,0,0,0.6)',
+              transform: `scale(${scale})`,
+              display: 'inline-block',
+              transition: 'color 0.1s ease',
             }}
           >
             {word.text}
@@ -3167,7 +3183,7 @@ const BenchmarkBeatScene: React.FC<{beat: Beat; plan: Plan; beatIndex: number; t
 }) => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
-  const opacity = interpolate(frame, [0, 8], [0, 1], clamp);
+  const opacity = beatIndex === 0 ? 1 : interpolate(frame, [0, 8], [0, 1], clamp);
   const progressPct = Math.min(
     100,
     ((beatIndex + Math.min(1, frame / Math.max(1, durationInFrames))) / Math.max(1, totalBeats)) * 100
@@ -3334,8 +3350,25 @@ export const UniversalReel: React.FC<Props> = ({plan}) => {
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;600;700;800;900&display=swap');
       `}</style>
 
-      {/* Ambient background music loop */}
-      <Audio src={staticFile('audio/bg_ambient.mp3')} volume={0.12} loop />
+      {/* Ambient background music loop with voice-friendly volume */}
+      <Audio src={staticFile('audio/bg_ambient.mp3')} volume={0.08} loop />
+
+      {/* 1-Frame Cover Poster Frame Injection for 100% Automatic YouTube/Instagram Thumbnail */}
+      {plan.cover_file ? (
+        <Sequence from={0} durationInFrames={1}>
+          <Img
+            src={staticFile(plan.cover_file)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              zIndex: 999,
+            }}
+          />
+        </Sequence>
+      ) : null}
 
       {plan.beats.map((beat, idx) => {
         const from = cursor;

@@ -141,6 +141,10 @@ def main() -> int:
             generate_cheatsheet_and_cover(plan, ROOT, run_dir, pdf_path, cover_path)
             print(f"[cheatsheet] PDF Interview Notes: {pdf_path}")
             print(f"[cover] 9:16 Reel/Short Cover Thumbnail: {cover_path}")
+            # Inject cover as 1-frame poster for automatic YouTube/Instagram thumbnail
+            public_cover = ROOT / "my-video" / "public" / "cover.png"
+            shutil.copy2(cover_path, public_cover)
+            plan["cover_file"] = "cover.png"
         except Exception as cs_exc:
             print(f"[cheatsheet-warn] Could not render PDF/Cover ({cs_exc})")
         if args.skip_images:

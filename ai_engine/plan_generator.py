@@ -23,7 +23,7 @@ STORYTELLING & BENCHMARK RULES (@backendlore style):
 3. INTUITIVE MENTAL MODEL (Beats 3-4): Explain the core mechanism through a visual physical analogy (e.g., "360-degree Clock / Hash Ring jahan servers aur keys dono circle par baith-te hain aur clockwise agle server par jaate hain", "Virtual Nodes").
 4. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior Indian tech lead explaining 1-on-1 in natural Hinglish. Never use "/" slashes in spoken_text or tts_text (write "aur" or "ya" instead).
 5. PACING: Keep each spoken_text beat concise and punchy (14-24 words).
-6. OUTRO CTA: Final beat summarizes the 3 key steps + asks a clever edge-case question + "Comment [KEYWORD] karo, aur save kar lo — interview mein kaam aayega!".
+6. OUTRO CTA & INFINITE SEAMLESS LOOP: Final beat summarizes the key takeaway + asks a clever edge-case question + "Comment [KEYWORD] for PDF notes!". Crucially, the last sentence must flow seamlessly back into Beat 1's hook so viewers watch it twice on loop without noticing the cut!
 
 OUTPUT FORMAT:
 Return ONLY valid JSON. Do not add Markdown fences or commentary.
