@@ -176,6 +176,53 @@ def _try_elevenlabs(spoken_script: str, caption_text: str, output_path: Path) ->
     return None
 
 
+def _try_sarvam_tts(tts_script: str, caption_text: str, output_path: Path) -> tuple[list[dict[str, Any]], float] | None:
+    """Attempt synthesis via Sarvam AI Bulbul v2/v3 Indian Hinglish TTS API (https://api.sarvam.ai/text-to-speech)."""
+    import base64
+    import os
+    import requests
+
+    provider = os.getenv("TTS_PROVIDER", "auto").strip().lower()
+    api_key = os.getenv("SARVAM_API_KEY", "").strip()
+    if provider in ("edge", "voicestudio", "elevenlabs") or not api_key:
+        return None
+
+    speaker = os.getenv("SARVAM_VOICE", "shubh").strip().lower() or "shubh"
+    model = os.getenv("SARVAM_MODEL", "bulbul:v3").strip() or "bulbul:v3"
+    pace = float(os.getenv("SARVAM_PACE", "1.08"))
+    try:
+        resp = requests.post(
+            "https://api.sarvam.ai/text-to-speech",
+            headers={
+                "api-subscription-key": api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "inputs": [tts_script[:500]],
+                "target_language_code": "hi-IN",
+                "speaker": speaker,
+                "model": model,
+                "pace": pace,
+                "enable_preprocessing": True,
+            },
+            timeout=(5.0, 60.0),
+        )
+        if resp.status_code == 200:
+            audios = resp.json().get("audios", [])
+            if audios:
+                wav_bytes = base64.b64decode(audios[0])
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(wav_bytes)
+                dur = _probe_duration(output_path)
+                words = _align_words_whisper_or_proportional(caption_text, output_path, dur)
+                print(f"    [SarvamAI] Synthesized ({model}/{speaker}) -> {dur:.2f}s")
+                return words, dur
+        print(f"    [SarvamAI] HTTP {resp.status_code}: {resp.text[:160]}")
+    except Exception as exc:
+        print(f"    [SarvamAI] Error: {exc}")
+    return None
+
+
 def _try_voicestudio(text: str, output_path: Path) -> tuple[list[dict[str, Any]], float] | None:
     """Attempt synthesis via local VoiceStudio OpenAI-compatible API (/v1/audio/speech)."""
     import os
@@ -290,6 +337,10 @@ def _synthesize_human(
     import subprocess
 
     spoken_script = (tts_text or text).strip()
+    sarvam_res = _try_sarvam_tts(spoken_script, text, output_path)
+    if sarvam_res is not None:
+        return sarvam_res
+
     el_res = _try_elevenlabs(spoken_script, text, output_path)
     if el_res is not None:
         return el_res
