@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from ai_engine.critic import evaluate_plan_quality
 from ai_engine.cta import plan_keyword
+from ai_engine.duration import DurationValidationError, validate_runtime_duration
 from ai_engine.plan_auditor import audit_and_sanitize
 from ai_engine.visual_router import assign_visuals
 from ai_engine.demo_plan import build_demo_plan
@@ -39,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a universal, JSON-driven technical Instagram Reel & YouTube Short.")
     parser.add_argument("--topic", type=str, help="Topic to explain, e.g. Apache Kafka")
     parser.add_argument("--duration", type=int, default=None, help="Target duration in seconds (default from .env or 70)")
+    parser.add_argument("--duration-tolerance", type=float, default=None, help="Maximum allowed runtime overrun in seconds before the pipeline stops. Default: 15s")
     parser.add_argument("--platform", type=str, choices=["reel", "shorts", "both"], default="reel", help="Target platform: reel (Instagram), shorts (YouTube Shorts), or both")
     parser.add_argument("--publish-instagram", action="store_true", help="Auto-publish rendered Reel to Instagram via Meta Graph API (mcpware/instagram-mcp flow)")
     parser.add_argument("--auto-dm", action="store_true", help="Scan recent Reel comments for trigger keyword and send PDF Cheat Sheet via Instagram DM")
@@ -75,6 +77,13 @@ def render_video(root: Path, output_path: Path) -> None:
         raise RuntimeError("Render command completed but output MP4 is missing or unexpectedly small")
 
 
+def validate_run_runtime(plan: dict, target_seconds: int, tolerance_seconds: float) -> None:
+    runtime_seconds = float(plan.get("duration_seconds") or 0.0)
+    if runtime_seconds <= 0:
+        raise DurationValidationError("Generated plan has no valid runtime seconds; cannot validate duration target.")
+    validate_runtime_duration(runtime_seconds, target_seconds, tolerance_seconds)
+
+
 def main() -> int:
     load_dotenv(ROOT / ".env")
     args = parse_args()
@@ -91,6 +100,7 @@ def main() -> int:
         return 2
 
     duration = args.duration or int(os.getenv("TARGET_DURATION_SECONDS", "70"))
+    duration_tolerance = args.duration_tolerance if args.duration_tolerance is not None else float(os.getenv("DURATION_TOLERANCE_SECONDS", "15"))
     fps = int(os.getenv("VIDEO_FPS", "30"))
     width = int(os.getenv("VIDEO_WIDTH", "1080"))
     height = int(os.getenv("VIDEO_HEIGHT", "1920"))
@@ -131,7 +141,6 @@ def main() -> int:
         print(f"[topic-lock] family={plan.get('topic_family')} format={plan.get('teaching_format')}")
         print(f"[topic-lock] validated exact topic: {plan['topic']}")
 
-        # Pre-render quality gate evaluation
         report = evaluate_plan_quality(plan)
         print(f"[critic] Story Quality Score: {report.score}/10 (Hook: {report.hook_score} | Intuition: {report.intuition_score} | Pacing: {report.pacing_score} | CTA: {report.cta_score})")
         if report.feedback:
@@ -147,8 +156,6 @@ def main() -> int:
         if not report.passed:
             raise RuntimeError(f"Story quality check failed ({report.score}/10): {'; '.join(report.feedback)}")
 
-        # Narration <-> visual consistency: drop anything on screen the narrator never says, then pick
-        # a validated visual template per beat (no more topic guessing inside the renderer).
         audit = audit_and_sanitize(plan, fix=(plan_source != "curated"))
         for msg in audit["errors"]:
             print(f"[audit-fix] {msg}")
@@ -189,6 +196,7 @@ def main() -> int:
         print("\n[2/5] Generating voice, word timings & studio SFX...")
         ensure_sfx_assets(ROOT)
         plan = generate_beat_audio(plan, ROOT, run_dir, voice, rate, fps)
+        validate_run_runtime(plan, duration, duration_tolerance)
         print(f"[audio] total timeline: {plan['duration_seconds']}s")
 
         print("\n[3/5] Generating PDF Interview Cheat Sheet, 9:16 Cover & supporting visuals...")
@@ -198,7 +206,6 @@ def main() -> int:
             generate_cheatsheet_and_cover(plan, ROOT, run_dir, pdf_path, cover_path)
             print(f"[cheatsheet] PDF Interview Notes: {pdf_path}")
             print(f"[cover] 9:16 Reel/Short Cover Thumbnail: {cover_path}")
-            # Inject cover as 1-frame poster for automatic YouTube/Instagram thumbnail
             public_cover = ROOT / "my-video" / "public" / "cover.png"
             shutil.copy2(cover_path, public_cover)
             plan["cover_file"] = "cover.png"
@@ -286,6 +293,10 @@ def main() -> int:
         print(f"Plan:  {run_dir / 'final_plan.json'}")
         print("=" * 64)
         return 0
+    except DurationValidationError as exc:
+        print(f"\n[error] {exc}")
+        print(f"[debug] Check run files in: {run_dir}")
+        return 1
     except KeyboardInterrupt:
         print("\n[stopped] User cancelled the pipeline.")
         return 130
