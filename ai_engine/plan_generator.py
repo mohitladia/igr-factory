@@ -259,6 +259,36 @@ def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
         if missing:
             raise ValueError("Topic relevance check failed for Two Sum: missing core teaching concepts (" + ", ".join(missing) + "). No video was rendered.")
 
+    # Keep a correctly named Anagram plan from carrying over the adjacent Two Sum lesson.
+    if re.search(r"\banagrams?\b", topic, re.I):
+        anagram_corpus_parts: list[str] = []
+        for beat in beats:
+            if not isinstance(beat, dict):
+                continue
+            anagram_corpus_parts.extend(
+                str(beat.get(key, ""))
+                for key in ("id", "title", "spoken_text", "tts_text", "visual_action", "metric")
+            )
+            for key in ("nodes", "steps"):
+                values = beat.get(key, [])
+                if isinstance(values, list):
+                    anagram_corpus_parts.extend(str(value) for value in values)
+        anagram_corpus = " ".join(anagram_corpus_parts)
+        two_sum_markers = (
+            r"\btwo\s*sum\b",
+            r"\bleetcode\s*#?\s*1\b",
+            r"\bcomplement\b.{0,80}\btarget\b",
+            r"\btarget\b.{0,80}\bcomplement\b",
+        )
+        if any(re.search(pattern, anagram_corpus, re.I) for pattern in two_sum_markers):
+            raise ValueError(
+                "Topic relevance check failed for Anagram: Two Sum content detected. No video was rendered."
+            )
+        if not re.search(r"\banagram\b|frequen(?:cy|cies)|character count|letter count", anagram_corpus, re.I):
+            raise ValueError(
+                "Topic relevance check failed for Anagram: no anagram/frequency-count teaching content found. No video was rendered."
+            )
+
     clean_beats: list[dict[str, Any]] = []
     seen: set[str] = set()
     for index, item in enumerate(beats, start=1):
