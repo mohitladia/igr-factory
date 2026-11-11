@@ -28,27 +28,55 @@ def evaluate_plan_quality(plan: dict[str, Any]) -> QualityReport:
 
     feedback: list[str] = []
 
+    # 0. Anti-Boilerplate & Placeholder Filter
+    all_text = " ".join(str(b.get("spoken_text", "")) for b in beats).lower()
+    all_nodes = " ".join(
+        str(n.get("label", "")) + " " + str(n.get("detail", ""))
+        for b in beats for n in b.get("nodes", []) if isinstance(n, dict)
+    ).lower()
+    combined_script = all_text + " " + all_nodes
+
+    bland_patterns = [
+        "request ingestion",
+        "core processing engine",
+        "core execution",
+        "fast state layer",
+        "core layers mein kaam karta",
+        "high latency & bottleneck",
+        "scalable & fault-tolerant",
+        "standard ratta answer mat dena",
+    ]
+    detected_bland = [p for p in bland_patterns if p in combined_script]
+    if detected_bland:
+        feedback.append(
+            f"Generic placeholder boilerplate detected ({', '.join(detected_bland)}). Script lacks topic-specific engineering depth."
+        )
+
     # 1. Hook Evaluation (Beat 1)
     hook_beat = beats[0]
     hook_text = str(hook_beat.get("spoken_text", "")).lower()
     hook_score = 5.0
-    hook_cues = ["interview", "kaise", "kyun", "90%", "reject", "fail", "socho", "dilemma", "mistake"]
+    hook_cues = ["interview", "kaise", "kyun", "90%", "reject", "fail", "socho", "dilemma", "mistake", "crash", "choke"]
     if any(q in hook_text for q in hook_cues):
         hook_score += 4.0
+    if "?" in str(hook_beat.get("spoken_text", "")):
+        hook_score += 1.0
     words_in_hook = len(hook_text.split())
     if words_in_hook > 22:
         hook_score -= 2.0
         feedback.append("Hook beat is too long. Keep under 18 words for an immediate scroll-stopping punch.")
-    if hook_score < 6.5:
-        feedback.append("Hook is too textbook-like. Start with a high-stakes interview question or common misconception.")
+    if hook_score < 6.5 or "ratta answer mat dena" in hook_text:
+        hook_score = min(hook_score, 4.0)
+        feedback.append("Hook is too textbook-like or generic. Start with a concrete high-stakes interview question with real numbers.")
 
     # 2. Intuition & Mental Model Evaluation
-    all_text = " ".join(str(b.get("spoken_text", "")) for b in beats).lower()
     intuition_score = 5.0
     mental_models = [
-        "diary", "memory", "socho", "analogy", "metaphor", "example",
-        "magic", "trick", "instantly", "single pass", "behind the scenes",
-        "real life", "tape", "counter", "pukaaro", "khali"
+        "diary", "socho", "analogy", "metaphor", "example",
+        "trick", "instantly", "single pass", "behind the scenes",
+        "real life", "tape", "counter", "pukaaro", "khali",
+        "modulo", "formula", "co-locate", "ceiling", "ring",
+        "overlap", "chunks", "hashmap", "round-robin", "zero downtime"
     ]
     if any(m in all_text for m in mental_models):
         intuition_score += 4.0
@@ -76,11 +104,15 @@ def evaluate_plan_quality(plan: dict[str, Any]) -> QualityReport:
     else:
         feedback.append("Outro lacks an active engagement prompt (e.g. 'Comment [TOPIC] for complete PDF notes').")
 
+    if detected_bland:
+        hook_score = min(hook_score, 4.0)
+        intuition_score = min(intuition_score, 4.0)
+
     total_score = round(
         hook_score * 0.35 + intuition_score * 0.30 + pacing_score * 0.20 + cta_score * 0.15,
         1,
     )
-    passed = total_score >= 7.5 and len(feedback) <= 1
+    passed = total_score >= 8.0 and len(feedback) == 0
 
     return QualityReport(
         score=total_score,

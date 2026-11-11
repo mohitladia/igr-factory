@@ -174,12 +174,13 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
                 {"role": "user", "content": user_prompt},
             ],
         }
+        timeout_s = int(os.getenv("LLM_TIMEOUT", "8"))
         try:
-            response = requests.post(_endpoint(), headers=headers, json=payload, timeout=120)
+            response = requests.post(_endpoint(), headers=headers, json=payload, timeout=timeout_s)
             if response.status_code in {400, 404, 422}:
                 retry_payload = dict(payload)
                 retry_payload.pop("response_format", None)
-                response = requests.post(_endpoint(), headers=headers, json=retry_payload, timeout=120)
+                response = requests.post(_endpoint(), headers=headers, json=retry_payload, timeout=timeout_s)
             response.raise_for_status()
             body = response.json()
             raw_content = body["choices"][0]["message"]["content"]

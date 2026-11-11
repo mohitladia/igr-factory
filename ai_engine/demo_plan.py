@@ -350,6 +350,103 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             connections=[[0, 1], [1, 2]]
           )
         ]
+    elif "shard" in clean.lower():
+        beats = [
+          dict(
+            id="hook",
+            type="kinetic_title",
+            title="DATABASE SHARDING",
+            spoken_text="Interviewer ne poocha: 50 crore users par akeli PostgreSQL DB crash kyun ho jati hai? Jawab hai Database Sharding!",
+            tts_text="इंटरव्यूअर ने पूछा: पचास करोड़ यूज़र्स पर अकेली PostgreSQL डेटाबेस क्रैश क्यों हो जाती है? जवाब है Database Sharding!",
+            visual_action="Single massive database server turning red with memory choke alert.",
+            accent_words=["50 crore users", "crash kyun", "Database Sharding"],
+            metric="500M USERS · DB CHOKE",
+            nodes=[], connections=[], steps=[]
+          ),
+          dict(
+            id="vertical_limit",
+            type="comparison",
+            title="THE VERTICAL CEILING",
+            spoken_text="Server chahe 128-core ho, disk IOPS ceiling aate hi crash! Hamein horizontal partitioning chahiye — yaani data ko alag-alag databases mein baantna.",
+            tts_text="सर्वर चाहे एक सौ अट्ठाईस कोर हो, disk IOPS ceiling आते ही क्रैश! हमें horizontal partitioning चाहिए — यानी डेटा को अलग-अलग databases में बाँटना।",
+            visual_action="Compare single bloated DB hitting disk ceiling vs 4 horizontal shards.",
+            accent_words=["128-core", "disk IOPS ceiling", "baantna"],
+            metric="VERTICAL SCALE CEILING",
+            nodes=[
+              {"label": "Single Massive DB", "detail": "128 Cores · 100GB IOPS Limit · SPOF!", "color": "#FF5555"},
+              {"label": "4 Sharded DBs", "detail": "Split dataset · 4x write IOPS capacity!", "color": "#3FB950"}
+            ],
+            connections=[], steps=[]
+          ),
+          dict(
+            id="shard_key_model",
+            type="architecture_build",
+            title="THE SHARD KEY FORMULA",
+            spoken_text="Socho 4 separate databases hain: DB-1 se DB-4! Shard Key hai user-id, aur formula hai: Hash of user-id modulo 4!",
+            tts_text="सोचो चार separate databases हैं: डी बी वन से डी बी फोर! Shard Key है user-id, और फ़ॉर्मूला है: Hash of user-id modulo four!",
+            visual_action="Show Router hashing user_id and routing to 4 database shards.",
+            accent_words=["user-id", "modulo 4", "Shard Key"],
+            metric="HASH(USER_ID) % 4",
+            nodes=[
+              {"label": "Query Router", "detail": "Computes user_id % 4", "color": "#FF9F2A"},
+              {"label": "Shard 1 (DB-1)", "detail": "Users 0 to 25%", "color": "#58A6FF"},
+              {"label": "Shard 2 (DB-2)", "detail": "Users 25 to 50%", "color": "#3FB950"},
+              {"label": "Shard 3 (DB-3)", "detail": "Users 50 to 75%", "color": "#BC8CFF"},
+              {"label": "Shard 4 (DB-4)", "detail": "Users 75 to 100%", "color": "#39D353"}
+            ],
+            connections=[[0, 1], [0, 2], [0, 3], [0, 4]],
+            steps=[]
+          ),
+          dict(
+            id="targeted_query",
+            type="data_flow",
+            title="INSTANT TARGET ROUTING",
+            spoken_text="User 42 aaya: 42 mod 4 banta hai 2! Router seedha Shard-2 pe gaya — query 3 millisecond mein solve, baki DBs free!",
+            tts_text="User बयालीस आया: बयालीस mod चार बनता है दो! Router सीधा Shard-2 पे गया — क्वेरी तीन मिलीसेकंड में solve, बाक़ी डी बी फ़्री!",
+            visual_action="Animate User 42 query passing directly into Shard-2 avoiding all other shards.",
+            accent_words=["42 mod 4", "Shard-2", "3 millisecond"],
+            metric="< 3MS DIRECT ROUTING",
+            steps=[
+              {"label": "1. Query user_id=42", "detail": "Request arrives at DB routing coordinator"},
+              {"label": "2. Calculate 42 % 4 = 2", "detail": "Instant O(1) shard lookup formula"},
+              {"label": "3. Query Only Shard-2", "detail": "Isolated fetch! Shards 1, 3, 4 stay completely idle"}
+            ],
+            nodes=[], connections=[]
+          ),
+          dict(
+            id="cross_shard_trap",
+            type="concept_visual",
+            title="THE CROSS-SHARD TRAP",
+            spoken_text="Lekin interview trap: Agar Shard-1 ke user ko Shard-3 ke order se JOIN karna ho, toh network IO poora system choke kar deta hai!",
+            tts_text="लेकिन इंटरव्यू ट्रैप: अगर Shard-1 के यूज़र को Shard-3 के ऑर्डर से JOIN करना हो, तो नेटवर्क IO पूरा सिस्टम चोक कर देता है!",
+            visual_action="Show slow cross-shard join causing high network latency spike across shards.",
+            accent_words=["Cross-Shard query", "poora system choke"],
+            metric="CROSS-SHARD JOIN TRAP ⚠",
+            nodes=[
+              {"label": "User Record (Shard 1)", "detail": "user_id = 101 on DB-1", "color": "#FF9F2A"},
+              {"label": "Orders Record (Shard 3)", "detail": "order_id = 899 on DB-3", "color": "#FF5555"},
+              {"label": "Cross-Network JOIN", "detail": "Distributed 2PC / Network roundtrips kill speed!", "color": "#F85149"}
+            ],
+            connections=[[0, 2], [1, 2]],
+            steps=[]
+          ),
+          dict(
+            id="summary",
+            type="summary",
+            title="SHARDING CHEATSHEET",
+            spoken_text="Solution? Related tables ko same Shard Key par co-locate karo. Comment SHARD karo, aur save kar lo — interview mein kaam aayega!",
+            tts_text="सॉल्यूशन? Related tables को same Shard Key पर co-locate करो! कमेंट SHARD करो, और सेव कर लो — इंटरव्यू में काम आएगा!",
+            visual_action="Show PDF cheat sheet card and DM automation CTA.",
+            accent_words=["co-locate", "Shard Key", "Comment SHARD"],
+            metric="CO-LOCATE BY SHARD KEY",
+            nodes=[
+              {"label": "Shard Key (user_id)", "detail": "Hash partitioning modulo N"},
+              {"label": "Direct Routing", "detail": "Only hits 1 shard per query"},
+              {"label": "Co-location", "detail": "Avoid Cross-Shard JOIN traps"}
+            ],
+            connections=[[0, 1], [1, 2]]
+          )
+        ]
     else:
         slug_tag = clean.upper().replace(" ", "")[:14]
         beats = [

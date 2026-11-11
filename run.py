@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auto-dm", action="store_true", help="Scan recent Reel comments for trigger keyword and send PDF Cheat Sheet via Instagram DM")
     parser.add_argument("--upload-youtube", action="store_true", help="Auto-upload rendered Short to YouTube via YouTube Data API v3")
     parser.add_argument("--demo", action="store_true", help="Use topic-aware sample plan without the LLM API")
+    parser.add_argument("--script-only", action="store_true", help="Generate and preview script and storyboard only without audio, assets or video")
     parser.add_argument("--plan-only", action="store_true", help="Generate plan/audio/assets but do not render MP4")
     parser.add_argument("--skip-images", action="store_true", help="Skip optional hosted AI image generation")
     return parser.parse_args()
@@ -123,6 +124,28 @@ def main() -> int:
             print(f"[critic] Fallback Story Quality Score: {report.score}/10")
         if not report.passed:
             raise RuntimeError(f"Story quality check failed ({report.score}/10): {'; '.join(report.feedback)}")
+
+        if args.script_only:
+            print("\n" + "=" * 64)
+            print(f"STORYBOARD & SCRIPT PREVIEW: {topic.upper()}")
+            print(f"Quality Score: {report.score}/10 (Passed: {report.passed})")
+            print("=" * 64)
+            for i, b in enumerate(plan['beats'], 1):
+                metric_tag = f" | Metric: {b.get('metric')}" if b.get('metric') else ""
+                print(f"\n[Beat {i}] {b.get('title', '').upper()} ({b.get('type')}){metric_tag}")
+                print(f"  Narration: \"{b.get('spoken_text')}\"")
+                if b.get('nodes'):
+                    nodes_str = ", ".join(f"{n.get('label', '')} ({n.get('detail', '')})" for n in b['nodes'] if isinstance(n, dict))
+                    print(f"  Nodes: {nodes_str}")
+                if b.get('steps'):
+                    steps_str = ", ".join(f"{s.get('label', '')}" for s in b['steps'] if isinstance(s, dict))
+                    print(f"  Steps: {steps_str}")
+            print("\n" + "=" * 64)
+            print(f"Quality Approved! To render audio and video, run:")
+            print(f"python run.py --topic \"{topic}\" --platform both")
+            print("=" * 64 + "\n")
+            return 0
+
         plan["fps"] = fps
         plan["width"] = width
         plan["height"] = height
