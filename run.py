@@ -19,6 +19,7 @@ from audio_engine.sfx_generator import ensure_sfx_assets
 from audio_engine.voice_generator import generate_beat_audio
 from publisher.social_publisher import (
     auto_dm_keyword_comments,
+    ensure_cheatsheet_url,
     publish_instagram_reel,
     upload_youtube_short,
     write_instagram_metadata,
@@ -40,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auto-dm", action="store_true", help="Scan recent Reel comments for trigger keyword and send PDF Cheat Sheet via Instagram DM")
     parser.add_argument("--upload-youtube", action="store_true", help="Auto-upload rendered Short to YouTube via YouTube Data API v3")
     parser.add_argument("--demo", action="store_true", help="Use topic-aware sample plan without the LLM API")
+    parser.add_argument("--allow-demo-fallback", action="store_true", help="Allow a demo storyboard if AI generation or validation fails")
     parser.add_argument("--script-only", action="store_true", help="Generate and preview script and storyboard only without audio, assets or video")
     parser.add_argument("--plan-only", action="store_true", help="Generate plan/audio/assets but do not render MP4")
     parser.add_argument("--skip-images", action="store_true", help="Skip optional hosted AI image generation")
@@ -73,6 +75,13 @@ def render_video(root: Path, output_path: Path) -> None:
 def main() -> int:
     load_dotenv(ROOT / ".env")
     args = parse_args()
+    if args.auto_dm and not args.plan_only:
+        if not args.publish_instagram:
+            print("[error] --auto-dm requires --publish-instagram so DMs target the Reel created in this run.")
+            return 2
+        if args.platform == "shorts":
+            print("[error] --auto-dm requires --platform reel or both; shorts-only runs have no Instagram Reel.")
+            return 2
     topic = (args.topic or input("Enter Reel topic: ")).strip()
     if not topic:
         print("[error] Topic cannot be empty.")
@@ -104,9 +113,13 @@ def main() -> int:
                 raw_plan = generate_plan(topic, duration)
                 plan = validate_and_normalize(raw_plan, topic)
             except Exception as llm_exc:
-                print(f"[plan-fallback] LLM response incomplete or unavailable ({llm_exc}); using high-retention topic storyboard generator.")
-                raw_plan = build_demo_plan(topic, duration)
-                plan = validate_and_normalize(raw_plan, topic)
+                if not args.allow_demo_fallback:
+                    raise RuntimeError(
+                        f"AI storyboard could not be generated or validated: {llm_exc}. "
+                        "Use --demo for a sample plan, or explicitly pass --allow-demo-fallback."
+                    ) from llm_exc
+                print(f"[plan-fallback] AI plan failed ({llm_exc}); explicit fallback enabled, using the demo storyboard.")
+                plan = validate_and_normalize(build_demo_plan(topic, duration), topic)
         print(f"[topic-lock] family={plan.get('topic_family')} format={plan.get('teaching_format')}")
         print(f"[topic-lock] validated exact topic: {plan['topic']}")
 
@@ -116,7 +129,7 @@ def main() -> int:
         if report.feedback:
             for tip in report.feedback:
                 print(f"[critic-tip] {tip}")
-        if not report.passed and not args.demo:
+        if not report.passed and not args.demo and args.allow_demo_fallback:
             print("[critic-fallback] LLM storyboard did not pass quality gate; upgrading to verified high-retention storyboard.")
             raw_plan = build_demo_plan(topic, duration)
             plan = validate_and_normalize(raw_plan, topic)
@@ -170,6 +183,11 @@ def main() -> int:
             plan["cover_file"] = "cover.png"
         except Exception as cs_exc:
             print(f"[cheatsheet-warn] Could not render PDF/Cover ({cs_exc})")
+        plan["auto_dm_enabled"] = bool(args.auto_dm and not args.plan_only)
+        if args.auto_dm and not args.plan_only:
+            plan["cheatsheet_url"] = ensure_cheatsheet_url(plan, pdf_path)
+        elif args.auto_dm and args.plan_only:
+            print("[instagram-dm] Skipped link setup in --plan-only mode; no external upload was attempted.")
         if args.skip_images:
             print("[visuals] optional AI images skipped by command line")
         else:
@@ -199,6 +217,7 @@ def main() -> int:
             return 0
 
         rendered_outputs: list[Path] = []
+        published_instagram_media_id: str | None = None
         for plat in platforms_to_render:
             plan["platform"] = plat
             write_render_plan(plan, render_plan_path)
@@ -221,16 +240,21 @@ def main() -> int:
             rendered_outputs.append(output_path)
             if plat == "reel" and args.publish_instagram:
                 pub_info = publish_instagram_reel(output_path, ig_caption)
+                published_instagram_media_id = str(pub_info.get("media_id") or "") or None
                 print(f"[instagram-published] Media ID: {pub_info.get('media_id')}")
             if plat == "shorts" and args.upload_youtube:
                 yt_info = upload_youtube_short(output_path, plan)
                 print(f"[youtube-uploaded] URL: {yt_info.get('url')}")
 
-        if args.auto_dm:
+        if args.auto_dm and not args.plan_only:
             kw = "".join(ch for ch in topic if ch.isalnum()).upper()[:12] or "NOTES"
-            dm_url = os.getenv("CHEATSHEET_DEFAULT_URL", "https://github.com/mohitladia/igr-factory")
-            dm_stats = auto_dm_keyword_comments(kw, dm_url)
+            dm_url = str(plan.get("cheatsheet_url") or "").strip()
+            if not dm_url:
+                raise RuntimeError("Auto-DM needs a public PDF link; configure CHEATSHEET_DEFAULT_URL or opt in to public Catbox uploads.")
+            dm_stats = auto_dm_keyword_comments(kw, dm_url, media_id=published_instagram_media_id)
             print(f"[instagram-dm] Checked {dm_stats.get('checked')} comments, sent {dm_stats.get('dms_sent')} PDF DMs.")
+            if published_instagram_media_id:
+                print("[instagram-dm] This was a one-time scan. Run tools/watch_instagram_comments.py to keep checking for later comments.")
 
         print("\n" + "=" * 64)
         print("GENERATION COMPLETED SUCCESSFULLY")

@@ -121,6 +121,18 @@ npm run dev
 
 Open the Remotion Studio URL printed in the terminal. The Python pipeline writes the current plan to `my-video/src/data/plan.json` and audio/images to `my-video/public`.
 
+## Instagram publishing and comment-to-DM
+
+Set `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ACCOUNT_ID`, and a public `PUBLIC_VIDEO_URL` in `.env` before using `--publish-instagram`. Instagram must be able to fetch the MP4 over HTTPS. Catbox uploads are disabled by default; set `ALLOW_PUBLIC_CATBOX_UPLOADS=true` only if you accept public third-party hosting. Prefer your own hosting URL.
+
+For optional PDF delivery, set `CHEATSHEET_DEFAULT_URL` to a public URL you control, or explicitly opt in to Catbox uploads. Run with `--publish-instagram --auto-dm`; this scans comments on the Reel published in that run once. To keep watching for new comments, start this after publishing and keep it running:
+
+```powershell
+.\.venv\Scripts\python.exe tools\watch_instagram_comments.py --media-id "YOUR_INSTAGRAM_MEDIA_ID" --keyword "KAFKA" --cheatsheet-url "https://your-domain/notes.pdf"
+```
+
+The watcher remembers processed comment IDs under `output/state/instagram_dm`. Keep that folder intact to avoid reprocessing comments. The Instagram API account and permissions must support comment private replies.
+
 ## 7. TypeScript check
 
 ```powershell
@@ -210,7 +222,7 @@ run_reel.bat --demo --topic "Spring Boot dependency injection" --skip-images
 Note: demo mode is a deterministic pipeline smoke-test, not the full AI content quality benchmark. The DSA Two Sum demo has a dedicated walkthrough; other demo topics use a generic topic-safe sample structure. For production-quality topic-specific content, use the configured LLM mode.
 
 ### Verification status
-Python test suite: 8 tests passed, including topic classification, Two Sum demo content, Kafka topic-family detection, and rejection of a topic mismatch. Python syntax compilation passed. Remotion TypeScript compilation and an end-to-end MP4 render have not been verified in this build environment; run the Windows setup and render on the target machine before treating the package as production-ready.
+The verification notes below refer to earlier snapshots and may not match the current code. For a local check, run `python -m unittest discover -s tests -v` and `npx.cmd tsc --noEmit` from `my-video`. A real MP4 render, Instagram publish, YouTube upload, and comment-DM require local dependencies and credentials; review generated videos before publishing.
 
 
 ## v3: topic-drift bug fix
@@ -236,4 +248,4 @@ run_reel.bat --topic "Two Sum" --skip-images
 
 The run must show `family=dsa` and `format=algorithm_walkthrough`. If the model returns Kafka content, the pipeline now stops with a relevance error instead of rendering the wrong video. Demo mode creates the deterministic Two Sum teaching plan.
 
-Verification: 10 Python tests passed. Remotion TypeScript build and a Windows MP4 render are still not verified here.
+The test counts above describe an earlier snapshot; use the current verification commands in the section above for this checkout.

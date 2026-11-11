@@ -10,8 +10,8 @@ class TopicProfile:
     teaching_flow: tuple[str, ...]
 
 RULES = [
-    (r"\b(two\s*sum|two[- ]?sum|three\s*sum|valid\s*parentheses|binary\s*search|linked\s*list|tree|graph|dynamic\s*programming|leetcode|dsa|array|hashmap)\b",
-     TopicProfile("dsa", "algorithm_walkthrough", ("problem", "approach", "complexity", "example"), ("hook", "problem", "baseline", "optimized_approach", "dry_run", "complexity", "takeaway"))),
+    (r"\b(two\s*sum|three\s*sum|anagram|valid\s*anagram|group\s*anagrams|palindrome|valid\s*palindrome|valid\s*parentheses|parentheses|binary\s*search|linked\s*list|lru\s*cache|tree|graph|bfs|dfs|dynamic\s*programming|leetcode|dsa|array|string|hashmap|two\s*pointers|sliding\s*window|prefix\s*sum|merge\s*intervals|trapping\s*rain\s*water|coin\s*change)\b",
+     TopicProfile("dsa", "algorithm_walkthrough", ("problem", "baseline_vs_optimal", "mental_model", "dry_run", "complexity"), ("hook", "problem", "baseline", "optimized_approach", "dry_run", "complexity", "takeaway"))),
     (r"\b(kafka|rabbitmq|sqs|redis\s*streams|event\s*streaming|message\s*queue)\b",
      TopicProfile("distributed_messaging", "event_streaming_explainer", ("producer", "consumer", "delivery_or_storage_semantics"), ("hook", "problem", "core_model", "data_flow", "reliability", "use_cases", "takeaway"))),
     (r"\b(redis|caching|cache|memcached)\b",

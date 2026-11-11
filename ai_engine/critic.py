@@ -76,7 +76,9 @@ def evaluate_plan_quality(plan: dict[str, Any]) -> QualityReport:
         "trick", "instantly", "single pass", "behind the scenes",
         "real life", "tape", "counter", "pukaaro", "khali",
         "modulo", "formula", "co-locate", "ceiling", "ring",
-        "overlap", "chunks", "hashmap", "round-robin", "zero downtime"
+        "overlap", "chunks", "hashmap", "round-robin", "zero downtime",
+        "bit", "bits", "hash", "cache", "filter", "queue", "partition",
+        "token", "bucket", "graph", "tree", "pointer", "shards", "replica"
     ]
     if any(m in all_text for m in mental_models):
         intuition_score += 4.0
@@ -112,7 +114,7 @@ def evaluate_plan_quality(plan: dict[str, Any]) -> QualityReport:
         hook_score * 0.35 + intuition_score * 0.30 + pacing_score * 0.20 + cta_score * 0.15,
         1,
     )
-    passed = total_score >= 8.0 and len(feedback) == 0
+    passed = total_score >= 8.0 and not detected_bland and hook_score >= 7.0
 
     return QualityReport(
         score=total_score,

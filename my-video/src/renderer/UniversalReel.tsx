@@ -39,7 +39,8 @@ type Plan = {
   topic: string;
   topic_family?: string;
   teaching_format?: string;
-  platform?: 'reel' | 'shorts';
+  platform?: 'reel' | 'shorts' | string;
+  cover_file?: string;
   fps: number;
   width: number;
   height: number;
@@ -60,6 +61,7 @@ const C = {
   green: '#3CEB8B',
   greenGlow: 'rgba(60, 235, 139, 0.28)',
   blue: '#58A6FF',
+  blueGlow: 'rgba(88, 166, 255, 0.32)',
   purple: '#A78BFA',
   red: '#FF4D4D',
   white: '#F7F8FA',
@@ -72,6 +74,16 @@ const FONT_MONO = "'JetBrains Mono', 'SF Mono', Consolas, monospace";
 const FONT_SANS = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
 
 const clamp = {extrapolateLeft: 'clamp' as const, extrapolateRight: 'clamp' as const};
+const normalizeTopic = (topic: string) => topic.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const isTwoSumTopic = (topic: string) => normalizeTopic(topic).includes('two sum');
+const isRagTopic = (topic: string) => {
+  const normalized = normalizeTopic(topic);
+  return /(^| )rag( |$)/.test(normalized) || normalized.includes('retrieval augmented generation');
+};
+const isScalingTopic = (topic: string) => {
+  const normalized = normalizeTopic(topic);
+  return normalized === 'scaling' || normalized.includes('horizontal scaling') || normalized.includes('vertical scaling');
+};
 
 // ==========================================
 // Typography Helpers
@@ -166,21 +178,24 @@ const InterviewHookCard: React.FC<{
   const badgeEnter = interpolate(frame, [6, 20], [0, 1], clamp);
   const statEnter = interpolate(frame, [14, 28], [0, 1], clamp);
 
-  const isKafka = topic.toLowerCase().includes('kafka');
-  const isDSA = topic.toLowerCase().includes('sum') || topic.toLowerCase().includes('two');
-  const isScaling = topic.toLowerCase().includes('scaling') || topic.toLowerCase().includes('scale');
+  const topicLower = topic.toLowerCase();
+  const isKafka = topicLower.includes('kafka');
+  const isTwoSum = isTwoSumTopic(topic);
+  const isScaling = isScalingTopic(topic);
 
   const question = isKafka
     ? 'Kafka itna *fast* kaise hai, jab woh har message *disk* pe likhta hai?'
-    : isDSA
+    : isTwoSum
       ? '*O(n²)* se *O(n)* kaise laaye, bina array sort kare?'
       : isScaling
         ? '10 Lakh users aane par server *BADA* kyun nahi karte, *NAYE* servers kyun lagate hain?'
-        : beat.spoken_text || `*${topic}* internal working aur real architecture kya hai?`;
+        : beat.spoken_text
+          ? beat.spoken_text.replace(/[!.?]+$/, '') + '?'
+          : `*${topic}* internal working aur real architecture kya hai?`;
 
   const statNumber = isKafka
     ? '7,000,000,000,000'
-    : isDSA
+    : isTwoSum
       ? 'O(n) Time · O(n) Space'
       : isScaling
         ? '10,000,000'
@@ -188,19 +203,19 @@ const InterviewHookCard: React.FC<{
 
   const statSub = isKafka
     ? "messages a day · LinkedIn's Kafka, 2019"
-    : isDSA
+    : isTwoSum
       ? 'Optimal HashMap Approach · LeetCode #1'
       : isScaling
         ? 'concurrent users · Zero Downtime Architecture'
-        : `${topic.toUpperCase()} · PRODUCTION ARCHITECTURE`;
+        : `${topic.toUpperCase()} · ${beat.metric || 'CORE CONCEPTS'}`;
 
   const pillTag = isKafka
     ? 'sab disk pe?'
-    : isDSA
+    : isTwoSum
       ? 'brute force fail?'
       : isScaling
         ? 'vertical fail?'
-        : (beat.accent_words && beat.accent_words[0]) || 'how it works?';
+        : (beat.accent_words && beat.accent_words[0]) || 'interview question';
 
   return (
     <div
@@ -973,11 +988,12 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
 
   const topicLower = (topic || '').toLowerCase();
   const isScaling =
-    topicLower.includes('horizontal scaling') ||
-    topicLower.includes('vertical scaling') ||
+    isScalingTopic(topic) ||
     beat.id === 'vertical_limits';
+  const isAnagram = topicLower.includes('anagram');
   const isDSA =
     topicLower.includes('two sum') ||
+    isAnagram ||
     (beat.spoken_text || '').toLowerCase().includes('brute') ||
     (beat.spoken_text || '').toLowerCase().includes('o of n') ||
     (beat.title || '').toLowerCase().includes('brute');
@@ -988,33 +1004,55 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
 
   const titleText = isScaling
     ? 'Architecture: *Vertical vs Horizontal*'
-    : isDSA
-      ? 'Complexity: *Brute Force vs HashMap*'
-      : `*${beat.title || 'Naive vs Optimized'}*`;
+    : isAnagram
+      ? 'Complexity: *Sorting vs 26-Bucket Array*'
+      : isDSA
+        ? 'Complexity: *Brute Force vs HashMap*'
+        : `*${beat.title || 'Naive vs Optimized'}*`;
 
-  const card1Title = n0?.label ? n0.label.toUpperCase() : isScaling ? 'VERTICAL SCALING' : 'NAIVE BOTTLENECK';
+  const card1Title = n0?.label
+    ? n0.label.toUpperCase()
+    : isScaling
+      ? 'VERTICAL SCALING'
+      : isAnagram
+        ? 'NAIVE: SORT STRINGS'
+        : 'NAIVE BOTTLENECK';
   const card1Big = isScaling
     ? 'SPOF'
-    : isDSA
-      ? 'O(n²)'
-      : (n2?.label ? n2.label.toUpperCase().slice(0, 12) : 'CRASH ✕');
+    : isAnagram
+      ? 'O(N log N)'
+      : isDSA
+        ? 'O(n²)'
+        : (n2?.label ? n2.label.toUpperCase().slice(0, 12) : 'CRASH ✕');
   const card1Sub =
     n0?.detail ||
     (isScaling
       ? 'Single huge server. Expensive hardware ceiling & 100% outage risk!'
-      : 'High latency, overload & expensive bottleneck under scale.');
+      : isAnagram
+        ? 'Sorting both strings takes O(N log N) time & modifies input. REJECTED!'
+        : 'High latency, overload & expensive bottleneck under scale.');
 
-  const card2Title = n1?.label ? n1.label.toUpperCase() : isScaling ? 'HORIZONTAL SCALING' : 'PRODUCTION ENGINE';
+  const card2Title = n1?.label
+    ? n1.label.toUpperCase()
+    : isScaling
+      ? 'HORIZONTAL SCALING'
+      : isAnagram
+        ? 'OPTIMAL: 26 BUCKETS'
+        : 'PRODUCTION ENGINE';
   const card2Big = isScaling
     ? '99.999%'
-    : isDSA
-      ? 'O(n)'
-      : (beat.metric ? beat.metric.slice(0, 12) : 'SCALABLE ✔');
+    : isAnagram
+      ? 'O(N)'
+      : isDSA
+        ? 'O(n)'
+        : (beat.metric ? beat.metric.slice(0, 12) : 'SCALABLE ✔');
   const card2Sub =
     n1?.detail ||
     (isScaling
       ? 'Pool of commodity servers. Infinite linear scale & Zero Downtime!'
-      : 'Low-latency indexing, high throughput & zero bottleneck.');
+      : isAnagram
+        ? 'Single pass with 26-size integer array. O(N) time & O(1) space!'
+        : 'Low-latency indexing, high throughput & zero bottleneck.');
 
   return (
     <div
@@ -2472,6 +2510,582 @@ const RAGInteractiveDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, fra
 };
 
 // ==========================================
+// ==========================================
+// 6A-1. DSA Anagram Interactive Diagram (LeetCode 242)
+// ==========================================
+const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame}) => {
+  const enter = interpolate(frame, [0, 14], [0, 1], clamp);
+  const scanProgress = interpolate(frame, [10, 80], [0, 7], clamp);
+  const activeCharIdx = Math.min(6, Math.floor(scanProgress));
+
+  const sChars = ['a', 'n', 'a', 'g', 'r', 'a', 'm'];
+  const tChars = ['n', 'a', 'g', 'a', 'r', 'a', 'm'];
+
+  const letterBuckets = [
+    {char: "'a'", sCount: 3, tCount: 3, finalCount: 0},
+    {char: "'g'", sCount: 1, tCount: 1, finalCount: 0},
+    {char: "'m'", sCount: 1, tCount: 1, finalCount: 0},
+    {char: "'n'", sCount: 1, tCount: 1, finalCount: 0},
+    {char: "'r'", sCount: 1, tCount: 1, finalCount: 0},
+  ];
+
+  const isDryRun = beat.id === 'dry_run' || beat.id === 'zero_check' || beat.type === 'data_flow';
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        paddingTop: 160,
+        paddingLeft: 56,
+        paddingRight: 56,
+      }}
+    >
+      {/* Top Badge */}
+      <div
+        style={{
+          padding: '8px 22px',
+          borderRadius: 999,
+          background: 'rgba(88, 166, 255, 0.14)',
+          border: `1.5px solid ${C.blue}`,
+          fontFamily: FONT_MONO,
+          fontSize: 14,
+          fontWeight: 800,
+          color: C.blue,
+          marginBottom: 16,
+          opacity: enter,
+        }}
+      >
+        LEETCODE 242 · 26-BUCKET SCALE
+      </div>
+
+      {/* Main Beat Title */}
+      <div style={{textAlign: 'center', marginBottom: 24, opacity: enter}}>
+        <EditorialText text={`*${beat.title || 'Valid Anagram'}*`} fontSize={46} color={C.white} accentColor={C.gold} />
+      </div>
+
+      {/* String S Strip */}
+      <div
+        style={{
+          width: 880,
+          padding: '16px 24px',
+          borderRadius: 20,
+          background: 'rgba(20, 26, 36, 0.94)',
+          border: `1.5px solid ${C.gold}88`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 14,
+          opacity: enter,
+        }}
+      >
+        <div style={{fontFamily: FONT_MONO, fontSize: 18, fontWeight: 900, color: C.gold}}>
+          String s =
+        </div>
+        <div style={{display: 'flex', gap: 10}}>
+          {sChars.map((ch, i) => {
+            const isScanning = isDryRun && i === activeCharIdx;
+            const isDone = isDryRun && i < activeCharIdx;
+            return (
+              <div
+                key={i}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 12,
+                  background: isScanning ? C.gold : isDone ? 'rgba(255, 159, 42, 0.2)' : 'rgba(255,255,255,0.06)',
+                  border: `2px solid ${isScanning ? '#FFF' : isDone ? C.gold : 'rgba(255,255,255,0.15)'}`,
+                  boxShadow: isScanning ? `0 0 20px ${C.gold}` : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: FONT_MONO,
+                  fontSize: 24,
+                  fontWeight: 900,
+                  color: isScanning ? '#000' : C.white,
+                  transform: `scale(${isScanning ? 1.15 : 1})`,
+                }}
+              >
+                {ch}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.green, fontWeight: 800}}>
+          +1 COUNT
+        </div>
+      </div>
+
+      {/* String T Strip */}
+      <div
+        style={{
+          width: 880,
+          padding: '16px 24px',
+          borderRadius: 20,
+          background: 'rgba(20, 26, 36, 0.94)',
+          border: `1.5px solid ${C.blue}88`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 24,
+          opacity: enter,
+        }}
+      >
+        <div style={{fontFamily: FONT_MONO, fontSize: 18, fontWeight: 900, color: C.blue}}>
+          String t =
+        </div>
+        <div style={{display: 'flex', gap: 10}}>
+          {tChars.map((ch, i) => {
+            const isScanning = isDryRun && i === activeCharIdx;
+            const isDone = isDryRun && i < activeCharIdx;
+            return (
+              <div
+                key={i}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 12,
+                  background: isScanning ? C.blue : isDone ? 'rgba(88, 166, 255, 0.2)' : 'rgba(255,255,255,0.06)',
+                  border: `2px solid ${isScanning ? '#FFF' : isDone ? C.blue : 'rgba(255,255,255,0.15)'}`,
+                  boxShadow: isScanning ? `0 0 20px ${C.blue}` : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: FONT_MONO,
+                  fontSize: 24,
+                  fontWeight: 900,
+                  color: isScanning ? '#000' : C.white,
+                  transform: `scale(${isScanning ? 1.15 : 1})`,
+                }}
+              >
+                {ch}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.red, fontWeight: 800}}>
+          -1 COUNT
+        </div>
+      </div>
+
+      {/* 26-Bucket Alphabet Array Display */}
+      <div
+        style={{
+          width: 880,
+          padding: '24px 28px',
+          borderRadius: 22,
+          background: 'rgba(14, 18, 24, 0.96)',
+          border: `2px solid ${C.cardBorder}`,
+          boxShadow: '0 16px 50px rgba(0,0,0,0.7)',
+          opacity: enter,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 16,
+        }}
+      >
+        <div style={{display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center'}}>
+          <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted, letterSpacing: 1.5, fontWeight: 800}}>
+            INT[26] FREQUENCY SCALE (INDEX: CHAR - 'A')
+          </div>
+          <div
+            style={{
+              padding: '4px 12px',
+              borderRadius: 8,
+              background: 'rgba(60, 235, 139, 0.15)',
+              border: `1px solid ${C.green}`,
+              fontFamily: FONT_MONO,
+              fontSize: 12,
+              fontWeight: 800,
+              color: C.green,
+            }}
+          >
+            SPACE: O(1) CONSTANT
+          </div>
+        </div>
+
+        {/* 5 Buckets of Active Letters + Others indicator */}
+        <div style={{display: 'flex', gap: 14, width: '100%', justifyContent: 'center'}}>
+          {letterBuckets.map((bucket) => {
+            const isSettled = frame > 40;
+            return (
+              <div
+                key={bucket.char}
+                style={{
+                  flex: 1,
+                  padding: '14px 10px',
+                  borderRadius: 16,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: `1.5px solid ${C.green}88`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <div style={{fontFamily: FONT_MONO, fontSize: 15, fontWeight: 900, color: C.gold}}>
+                  {bucket.char}
+                </div>
+                <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.muted}}>
+                  +{bucket.sCount} -{bucket.tCount}
+                </div>
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 10,
+                    background: isSettled ? 'rgba(60, 235, 139, 0.2)' : 'rgba(255,255,255,0.06)',
+                    border: `1.5px solid ${isSettled ? C.green : 'rgba(255,255,255,0.2)'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontFamily: FONT_MONO,
+                    fontSize: 20,
+                    fontWeight: 900,
+                    color: isSettled ? C.green : C.white,
+                  }}
+                >
+                  {bucket.finalCount}
+                </div>
+                <div style={{fontFamily: FONT_MONO, fontSize: 11, color: C.green, fontWeight: 700}}>
+                  ✔ ZERO
+                </div>
+              </div>
+            );
+          })}
+          <div
+            style={{
+              flex: 1,
+              padding: '14px 10px',
+              borderRadius: 16,
+              background: 'rgba(255,255,255,0.02)',
+              border: '1.5px dashed rgba(255,255,255,0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted}}>OTHER 21</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 20, fontWeight: 900, color: C.muted}}>0</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 11, color: C.muted}}>UNTOUCHED</div>
+          </div>
+        </div>
+
+        {/* Live Balance / Result Banner */}
+        <div
+          style={{
+            width: '100%',
+            padding: '12px 18px',
+            borderRadius: 14,
+            background: 'rgba(60, 235, 139, 0.12)',
+            border: `1.5px solid ${C.green}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{fontFamily: FONT_MONO, fontSize: 14, fontWeight: 800, color: C.white}}>
+            ⚖ SCALE VERIFICATION:
+          </div>
+          <div style={{fontFamily: FONT_MONO, fontSize: 15, fontWeight: 900, color: C.green}}>
+            ALL 26 BUCKETS == 0 → RETURN TRUE ✔
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom "THIS IS CALLED" Concept Callout Box */}
+      <div
+        style={{
+          marginTop: 22,
+          padding: '14px 38px',
+          borderRadius: 18,
+          background: 'rgba(255, 159, 42, 0.12)',
+          border: `2px solid ${C.gold}`,
+          textAlign: 'center',
+          opacity: enter,
+        }}
+      >
+        <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.muted, letterSpacing: 2}}>THIS IS CALLED</div>
+        <div style={{fontFamily: FONT_SANS, fontSize: 26, fontWeight: 900, color: C.gold, marginTop: 2}}>
+          {(beat.accent_words && beat.accent_words[0]) || beat.metric || '26-BUCKET FREQUENCY CANCEL'}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// 6A-2. Consistent Hashing Diagram
+// ==========================================
+const ConsistentHashingDiagram: React.FC<{beat: Beat; topic: string; frame: number}> = ({beat, topic, frame}) => {
+  const enter = interpolate(frame, [0, 14], [0, 1], clamp);
+  const nodes = beat.nodes && beat.nodes.length > 0 ? beat.nodes : [];
+  const items = nodes.length > 0 ? nodes : [
+    {label: 'Key Hash', detail: 'Incoming object hash token', color: C.gold},
+    {label: 'Hash Ring', detail: '0° to 360° circular space', color: C.blue},
+    {label: 'Target Node', detail: 'Clockwise next server', color: C.green},
+  ];
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        paddingTop: 155,
+        paddingLeft: 56,
+        paddingRight: 56,
+      }}
+    >
+      <div
+        style={{
+          padding: '8px 22px',
+          borderRadius: 999,
+          background: 'rgba(255, 159, 42, 0.14)',
+          border: `1.5px solid ${C.gold}`,
+          fontFamily: FONT_MONO,
+          fontSize: 14,
+          fontWeight: 800,
+          color: C.gold,
+          marginBottom: 16,
+          opacity: enter,
+        }}
+      >
+        DISTRIBUTED SYSTEMS · CONSISTENT HASHING
+      </div>
+
+      <div style={{textAlign: 'center', marginBottom: 18, opacity: enter}}>
+        <EditorialText text={`*${beat.title || topic}*`} fontSize={46} color={C.white} accentColor={C.gold} />
+      </div>
+
+      <div
+        style={{
+          position: 'relative',
+          width: 300,
+          height: 300,
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: enter,
+        }}
+      >
+        <svg width="300" height="300" viewBox="0 0 300 300">
+          <circle cx="150" cy="150" r="110" fill="rgba(16, 22, 32, 0.85)" stroke={C.blue} strokeWidth="4" strokeDasharray="10 6" />
+          <circle
+            cx="150"
+            cy="150"
+            r="110"
+            fill="none"
+            stroke={C.green}
+            strokeWidth="6"
+            strokeDasharray={`${interpolate(frame % 90, [0, 89], [20, 240], clamp)} 700`}
+            strokeLinecap="round"
+            transform="rotate(-90 150 150)"
+          />
+          <circle cx="150" cy="40" r="16" fill={C.gold} />
+          <text x="150" y="45" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">S1</text>
+          <circle cx="245" cy="205" r="16" fill={C.green} />
+          <text x="245" y="210" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">S2</text>
+          <circle cx="55" cy="205" r="16" fill={C.blue} />
+          <text x="55" y="210" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">S3</text>
+          {(() => {
+            const angle = ((frame * 3) % 360) * (Math.PI / 180);
+            const kx = 150 + 110 * Math.cos(angle - Math.PI / 2);
+            const ky = 150 + 110 * Math.sin(angle - Math.PI / 2);
+            return <circle cx={kx} cy={ky} r="9" fill="#FFFFFF" stroke={C.green} strokeWidth="4" />;
+          })()}
+        </svg>
+        <div style={{position: 'absolute', textAlign: 'center'}}>
+          <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.muted}}>HASH RING</div>
+          <div style={{fontFamily: FONT_MONO, fontSize: 22, fontWeight: 900, color: C.green}}>0° — 360°</div>
+          <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold, marginTop: 2}}>CLOCKWISE ↻</div>
+        </div>
+      </div>
+
+      <div style={{width: 880, display: 'flex', flexDirection: 'column', gap: 10, opacity: enter}}>
+        {items.slice(0, 2).map((item, idx) => (
+          <div
+            key={idx}
+            style={{
+              padding: '14px 20px',
+              borderRadius: 14,
+              background: C.cardBg,
+              border: `1.5px solid ${item.color || C.cardBorder}`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <div>
+              <div style={{fontFamily: FONT_MONO, fontSize: 13, color: item.color || C.gold, fontWeight: 800}}>{item.label}</div>
+              <div style={{fontFamily: FONT_SANS, fontSize: 16, color: C.mutedLight, marginTop: 2}}>{item.detail}</div>
+            </div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.green, fontWeight: 800}}>HASHED ✔</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// 6A-3. Rate Limiting Diagram
+// ==========================================
+const RateLimitingDiagram: React.FC<{beat: Beat; topic: string; frame: number}> = ({beat, topic, frame}) => {
+  const enter = interpolate(frame, [0, 14], [0, 1], clamp);
+  const items = beat.nodes && beat.nodes.length > 0 ? beat.nodes : [
+    {label: 'Incoming Traffic', detail: 'Burst requests at scale', color: C.gold},
+    {label: 'Token Bucket', detail: 'Refilled at constant rate', color: C.blue},
+    {label: 'Traffic Gate', detail: 'Allow 200 or Block 429', color: C.green},
+  ];
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        paddingTop: 155,
+        paddingLeft: 56,
+        paddingRight: 56,
+      }}
+    >
+      <div
+        style={{
+          padding: '8px 22px',
+          borderRadius: 999,
+          background: 'rgba(255, 77, 77, 0.14)',
+          border: `1.5px solid ${C.red}`,
+          fontFamily: FONT_MONO,
+          fontSize: 14,
+          fontWeight: 800,
+          color: C.red,
+          marginBottom: 16,
+          opacity: enter,
+        }}
+      >
+        API INFRASTRUCTURE · RATE LIMITING
+      </div>
+
+      <div style={{textAlign: 'center', marginBottom: 20, opacity: enter}}>
+        <EditorialText text={`*${beat.title || topic}*`} fontSize={46} color={C.white} accentColor={C.gold} />
+      </div>
+
+      <div
+        style={{
+          width: 880,
+          padding: '24px 28px',
+          marginBottom: 20,
+          borderRadius: 22,
+          background: 'rgba(14, 18, 26, 0.94)',
+          border: `2px solid ${C.gold}88`,
+          boxShadow: `0 12px 40px rgba(0,0,0,0.6), 0 0 35px ${C.goldGlow}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          opacity: enter,
+        }}
+      >
+        <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+          <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted, letterSpacing: 1.5}}>
+            {(items[0]?.label || 'BURST TRAFFIC').toUpperCase().slice(0, 20)}
+          </div>
+          <div style={{fontFamily: FONT_MONO, fontSize: 22, fontWeight: 900, color: C.white}}>
+            ⚡ {(items[0]?.detail || beat.metric || 'HIGH SCALE').slice(0, 22)}
+          </div>
+          <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold}}>API Gatekeeper</div>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '12px 22px',
+            borderRadius: 16,
+            background: 'rgba(255,255,255,0.04)',
+            border: `1.5px solid ${C.blue}88`,
+          }}
+        >
+          <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.blue, fontWeight: 800, marginBottom: 8}}>
+            {(items[1]?.label || 'TOKEN BUCKET').toUpperCase()}
+          </div>
+          <div style={{display: 'flex', gap: 10}}>
+            {[0, 1, 2, 3, 4].map((slot) => {
+              const activeTokens = 5 - Math.floor((frame % 90) / 18);
+              const hasToken = slot < activeTokens;
+              return (
+                <div
+                  key={slot}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    background: hasToken ? C.gold : 'rgba(255,255,255,0.08)',
+                    border: `2px solid ${hasToken ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
+                    boxShadow: hasToken ? `0 0 14px ${C.gold}` : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontFamily: FONT_MONO,
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: hasToken ? '#000' : C.muted,
+                  }}
+                >
+                  {hasToken ? 'T' : '·'}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end'}}>
+          <div
+            style={{
+              padding: '6px 14px',
+              borderRadius: 99,
+              background: 'rgba(63, 185, 80, 0.16)',
+              border: `1.5px solid ${C.green}`,
+              fontFamily: FONT_MONO,
+              fontSize: 13,
+              fontWeight: 800,
+              color: C.green,
+            }}
+          >
+            ✔ ALLOWED → 200 OK
+          </div>
+          <div
+            style={{
+              padding: '6px 14px',
+              borderRadius: 99,
+              background: 'rgba(255, 77, 77, 0.16)',
+              border: `1.5px solid ${C.red}`,
+              fontFamily: FONT_MONO,
+              fontSize: 13,
+              fontWeight: 800,
+              color: C.red,
+            }}
+          >
+            ✕ REJECTED → 429
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
 // 6B. Universal Dynamic Topic Diagram (Any New Topic)
 // ==========================================
 const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}> = ({beat, topic, frame}) => {
@@ -2575,187 +3189,9 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
       </div>
 
       {/* Main Beat Title */}
-      <div style={{textAlign: 'center', marginBottom: 18, opacity: enter}}>
+      <div style={{textAlign: 'center', marginBottom: 24, opacity: enter}}>
         <EditorialText text={`*${beat.title || topic}*`} fontSize={48} color={C.white} accentColor={C.gold} />
       </div>
-
-      {/* Interactive 360° Hash Ring / Circular Radar Canvas when topic involves Hashing/Ring/Sharding */}
-      {(topic.toLowerCase().includes('hash') ||
-        topic.toLowerCase().includes('ring') ||
-        (beat.spoken_text || '').toLowerCase().includes('ring')) && (
-        <div
-          style={{
-            position: 'relative',
-            width: 300,
-            height: 300,
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: enter,
-          }}
-        >
-          <svg width="300" height="300" viewBox="0 0 300 300">
-            {/* Outer glowing 360° Hash Ring */}
-            <circle
-              cx="150"
-              cy="150"
-              r="110"
-              fill="rgba(16, 22, 32, 0.85)"
-              stroke={C.blue}
-              strokeWidth="4"
-              strokeDasharray="10 6"
-            />
-            {/* Animated Clockwise Lookup Arc */}
-            <circle
-              cx="150"
-              cy="150"
-              r="110"
-              fill="none"
-              stroke={C.green}
-              strokeWidth="6"
-              strokeDasharray={`${interpolate(frame % 90, [0, 89], [20, 240], clamp)} 700`}
-              strokeLinecap="round"
-              transform="rotate(-90 150 150)"
-            />
-            {/* 3 Physical Server Nodes + Virtual Nodes on the Ring */}
-            <circle cx="150" cy="40" r="16" fill={C.gold} />
-            <text x="150" y="45" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">
-              S1
-            </text>
-            <circle cx="245" cy="205" r="16" fill={C.green} />
-            <text x="245" y="210" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">
-              S2
-            </text>
-            <circle cx="55" cy="205" r="16" fill={C.blue} />
-            <text x="55" y="210" textAnchor="middle" fill="#000" fontSize="12" fontWeight="900" fontFamily="monospace">
-              S3
-            </text>
-            {/* Orbiting Key Token */}
-            {(() => {
-              const angle = ((frame * 3) % 360) * (Math.PI / 180);
-              const kx = 150 + 110 * Math.cos(angle - Math.PI / 2);
-              const ky = 150 + 110 * Math.sin(angle - Math.PI / 2);
-              return <circle cx={kx} cy={ky} r="9" fill="#FFFFFF" stroke={C.green} strokeWidth="4" />;
-            })()}
-          </svg>
-          <div style={{position: 'absolute', textAlign: 'center'}}>
-            <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.muted}}>HASH RING</div>
-            <div style={{fontFamily: FONT_MONO, fontSize: 22, fontWeight: 900, color: C.green}}>0° — 360°</div>
-            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold, marginTop: 2}}>CLOCKWISE ↻</div>
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Token Bucket & HTTP 429 Traffic Gate when topic involves Rate Limiting */}
-      {(topic.toLowerCase().includes('rate') ||
-        topic.toLowerCase().includes('limit') ||
-        (beat.spoken_text || '').toLowerCase().includes('bucket') ||
-        (beat.spoken_text || '').toLowerCase().includes('429')) && (
-        <div
-          style={{
-            width: 880,
-            padding: '20px 26px',
-            marginBottom: 20,
-            borderRadius: 22,
-            background: 'rgba(14, 18, 26, 0.94)',
-            border: `2px solid ${C.gold}88`,
-            boxShadow: `0 12px 40px rgba(0,0,0,0.6), 0 0 35px ${C.goldGlow}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            opacity: enter,
-          }}
-        >
-          {/* Left: Incoming Burst Traffic (Driven by beat.nodes[0]) */}
-          <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted, letterSpacing: 1.5}}>
-              {(items[0]?.label || 'INCOMING TRAFFIC').toUpperCase().slice(0, 20)}
-            </div>
-            <div style={{fontFamily: FONT_MONO, fontSize: 22, fontWeight: 900, color: C.white}}>
-              ⚡ {(items[0]?.detail || beat.metric || 'HIGH SCALE').slice(0, 22)}
-            </div>
-            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.gold}}>{topic} Gatekeeper</div>
-          </div>
-
-          {/* Center: Animated 5-Token Bucket (Driven by beat.nodes[1]) */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              padding: '12px 22px',
-              borderRadius: 16,
-              background: 'rgba(255,255,255,0.04)',
-              border: `1.5px solid ${C.blue}88`,
-            }}
-          >
-            <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.blue, fontWeight: 800, marginBottom: 8}}>
-              {(items[1]?.label || 'TOKEN BUCKET').toUpperCase()} · {(items[1]?.detail || beat.metric || 'ACTIVE').toUpperCase().slice(0, 22)}
-            </div>
-            <div style={{display: 'flex', gap: 10}}>
-              {[0, 1, 2, 3, 4].map((slot) => {
-                const activeTokens = 5 - Math.floor((frame % 90) / 18);
-                const hasToken = slot < activeTokens;
-                return (
-                  <div
-                    key={slot}
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      background: hasToken ? C.gold : 'rgba(255,255,255,0.08)',
-                      border: `2px solid ${hasToken ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
-                      boxShadow: hasToken ? `0 0 14px ${C.gold}` : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontFamily: FONT_MONO,
-                      fontSize: 13,
-                      fontWeight: 900,
-                      color: hasToken ? '#000' : C.muted,
-                    }}
-                  >
-                    {hasToken ? 'T' : '·'}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Right: Live Gate Status (Driven by beat.nodes[2]) */}
-          <div style={{display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end'}}>
-            <div
-              style={{
-                padding: '6px 14px',
-                borderRadius: 99,
-                background: 'rgba(63, 185, 80, 0.16)',
-                border: `1.5px solid ${C.green}`,
-                fontFamily: FONT_MONO,
-                fontSize: 13,
-                fontWeight: 800,
-                color: C.green,
-              }}
-            >
-              ✔ ALLOWED → 200 OK
-            </div>
-            <div
-              style={{
-                padding: '6px 14px',
-                borderRadius: 99,
-                background: 'rgba(255, 77, 77, 0.16)',
-                border: `1.5px solid ${C.red}`,
-                fontFamily: FONT_MONO,
-                fontSize: 13,
-                fontWeight: 800,
-                color: C.red,
-              }}
-            >
-              ✕ {(items[2]?.detail || 'LIMIT EXCEEDED → 429').toUpperCase().slice(0, 22)}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Dynamic Interactive Cards Stack with Live Flow Connectors */}
       <div style={{width: 880, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, opacity: enter}}>
@@ -2841,7 +3277,7 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
 // ==========================================
 // 7. Cheat Sheet Outro Card (Benchmark 1:1)
 // ==========================================
-const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; platform?: 'reel' | 'shorts'}> = ({
+const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; platform?: 'reel' | 'shorts' | string}> = ({
   topic,
   beat,
   frame,
@@ -2851,20 +3287,23 @@ const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; p
   const buttonPulse = 1 + 0.04 * Math.sin(frame / 10);
   const isShorts = platform === 'shorts';
 
-  const isDSA = topic.toLowerCase().includes('sum') || topic.toLowerCase().includes('two');
-  const isScaling = topic.toLowerCase().includes('scaling') || topic.toLowerCase().includes('scale');
+  const isTwoSum = isTwoSumTopic(topic);
+  const isAnagram = topic.toLowerCase().includes('anagram');
+  const isScaling = isScalingTopic(topic);
   const isKafka = topic.toLowerCase().includes('kafka');
   const dynamicBullets =
     beat.nodes && beat.nodes.length > 0
       ? beat.nodes.map((n) => `${n.label.toLowerCase()} (${(n.detail || '').toLowerCase()})`).join(' · ')
-      : `${topic.toLowerCase()} · architecture · data flow · scaling · trade-offs`;
-  const bulletText = isDSA
-    ? 'array · hashmap · complement · two pointers · time O(n) · space O(n)'
-    : isScaling
-      ? 'load balancer · round robin · commodity servers · zero downtime · stateless'
-      : isKafka
-        ? 'log · partitions · disk · page cache · zero copy · retention · replication'
-        : dynamicBullets;
+      : `${topic.toLowerCase()} · algorithm · complexity · trade-offs`;
+  const bulletText = isAnagram
+    ? 's = "anagram" · t = "nagaram" · 26 frequency buckets · time O(n) · space O(1) · optimal'
+    : isTwoSum
+      ? 'array · hashmap · complement · two pointers · time O(n) · space O(n)'
+      : isScaling
+        ? 'load balancer · round robin · commodity servers · zero downtime · stateless'
+        : isKafka
+          ? 'log · partitions · disk · page cache · zero copy · retention · replication'
+          : dynamicBullets;
 
   return (
     <div
@@ -3109,10 +3548,13 @@ const BenchmarkCaption: React.FC<{beat: Beat; frame: number; fps: number}> = ({b
 // ==========================================
 const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> = ({beat, frame, plan}) => {
   const topicLower = plan.topic.toLowerCase();
-  const isDSA = (plan.topic_family || '').toLowerCase().includes('dsa') || topicLower.includes('sum');
+  const isTwoSum = isTwoSumTopic(plan.topic);
+  const isAnagram = topicLower.includes('anagram');
   const isKafka = topicLower.includes('kafka');
-  const isRAG = topicLower.includes('rag') || topicLower.includes('retrieval') || topicLower.includes('vector');
-  const isScaling = topicLower.includes('horizontal scaling') || topicLower.includes('vertical scaling');
+  const isRAG = isRagTopic(plan.topic);
+  const isScaling = isScalingTopic(plan.topic) && topicLower.includes('scaling');
+  const isRateLimit = /\b(rate limit|rate limiter|token bucket|leaky bucket)\b/i.test(topicLower);
+  const isConsistentHashing = /\b(consistent hash|hash ring)\b/i.test(topicLower);
 
   // 1. Summary / Outro
   if (beat.type === 'summary' || beat.id === 'summary') {
@@ -3129,7 +3571,23 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
     return <InterviewHookCard topic={plan.topic} beat={beat} frame={frame} />;
   }
 
-  // 4. Scaling beats
+  // 4. Rate Limiting beats
+  if (isRateLimit) {
+    if (beat.type === 'comparison') {
+      return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
+    }
+    return <RateLimitingDiagram beat={beat} topic={plan.topic} frame={frame} />;
+  }
+
+  // 5. Consistent Hashing beats
+  if (isConsistentHashing) {
+    if (beat.type === 'comparison') {
+      return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
+    }
+    return <ConsistentHashingDiagram beat={beat} topic={plan.topic} frame={frame} />;
+  }
+
+  // 6. Scaling beats
   if (isScaling) {
     if (beat.type === 'comparison' || beat.id === 'vertical_limits') {
       return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
@@ -3137,8 +3595,16 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
     return <HorizontalScalingDiagram beat={beat} frame={frame} />;
   }
 
-  // 5. DSA-specific beats
-  if (isDSA) {
+  // 7. Anagram specific beats (LeetCode 242)
+  if (isAnagram) {
+    if (beat.id === 'naive_trap' || beat.type === 'comparison') {
+      return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
+    }
+    return <DSAAnagramDiagram beat={beat} frame={frame} />;
+  }
+
+  // 8. Two Sum specific beats (only for Two Sum problem)
+  if (isTwoSum) {
     if (beat.id === 'problem' || beat.type === 'concept_visual') {
       return <DSAArrayTapeDiagram beat={beat} frame={frame} />;
     }
@@ -3157,7 +3623,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
     return <DSAArrayTapeDiagram beat={beat} frame={frame} />;
   }
 
-  // 6. Kafka / Messaging beats
+  // 9. Kafka / Messaging beats
   if (isKafka) {
     if (beat.id.includes('partition') || beat.type === 'architecture_build') {
       return <PartitionLanesDiagram beat={beat} frame={frame} />;
@@ -3165,7 +3631,7 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
     return <LogStreamDiagram beat={beat} frame={frame} />;
   }
 
-  // 7. Universal fallback for ANY new topic
+  // 10. Universal fallback for ANY new topic
   if (beat.type === 'comparison') {
     return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
   }
@@ -3379,7 +3845,7 @@ export const UniversalReel: React.FC<Props> = ({plan}) => {
           beat.id === 'problem' ||
           beat.type === 'comparison' ||
           beat.id === 'vertical_limits' ||
-          (beat.id === 'hook' && plan.topic.toLowerCase().includes('rag'));
+          (beat.id === 'hook' && isRagTopic(plan.topic));
 
         return (
           <Sequence key={beat.id} from={from} durationInFrames={duration}>

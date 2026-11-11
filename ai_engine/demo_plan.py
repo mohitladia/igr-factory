@@ -86,6 +86,114 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             connections=[[0,1],[1,2]]
           )
         ]
+    elif "anagram" in clean.lower():
+        beats = [
+          dict(
+            id="hook",
+            type="kinetic_title",
+            title="VALID ANAGRAM",
+            spoken_text="Interview mein poocha: Bina sorting ke check karo do strings anagram hain ya nahi — 90% log wahi fail!",
+            tts_text="इंटरव्यू में पूछा: बिना सॉर्टिंग के चेक करो दो स्ट्रिंग्स एनाग्राम हैं या नहीं — नब्बे परसेंट लोग वहीं फ़ेल!",
+            visual_action="Two string cards appear with timer ticking and 90% fail alert.",
+            accent_words=["Bina sorting", "90% log fail"],
+            metric="LEETCODE 242 · 90% FAIL",
+            nodes=[], connections=[], steps=[]
+          ),
+          dict(
+            id="naive_trap",
+            type="comparison",
+            title="THE SORTING TRAP",
+            spoken_text="Dono strings ko sort karke compare karna O of n log n time leta hai. Interviewer turant mana kar deta hai!",
+            tts_text="दोनों स्ट्रिंग्स को सॉर्ट करके कंपेयर करना ओ ऑफ़ एन लॉग एन टाइम लेता है। इंटरव्यूअर तुरंत मना कर देता है!",
+            visual_action="Compare slow O(N log N) sorting with single-pass frequency count.",
+            accent_words=["O of n log n", "mana kar deta"],
+            metric="O(N LOG N) REJECTED",
+            nodes=[
+              {"label": "Naive: Sort Both", "detail": "O(N log N) time · Extra memory · REJECTED!", "color": "#FF5555"},
+              {"label": "Optimal: Single Pass", "detail": "O(N) linear time · O(1) space · ACCEPTED!", "color": "#3FB950"}
+            ],
+            connections=[], steps=[]
+          ),
+          dict(
+            id="bucket_model",
+            type="architecture_build",
+            title="26 BUCKET SCALE",
+            spoken_text="Idea simple hai: 26 letters ke liye ek 26-size integer array banao — yeh hamari balance scale hai!",
+            tts_text="आइडिया सिंपल है: छब्बीस लेटर्स के लिए एक छब्बीस-साइज़ इंटीजर एरे बनाओ — ये हमारी बैलेंस स्केल है!",
+            visual_action="Show 26 frequency bucket slots representing letters a through z.",
+            accent_words=["26 letters", "balance scale"],
+            metric="26-BUCKET ARRAY · O(1)",
+            nodes=[
+              {"label": "Bucket 0 ('a')", "detail": "Index 0: letter count", "color": "#FF9F2A"},
+              {"label": "Bucket 1..24", "detail": "Indices 1 to 24: b to y", "color": "#58A6FF"},
+              {"label": "Bucket 25 ('z')", "detail": "Index 25: letter count", "color": "#3FB950"}
+            ],
+            connections=[[0, 1], [1, 2]],
+            steps=[]
+          ),
+          dict(
+            id="dry_run",
+            type="data_flow",
+            title="INCREMENT & DECREMENT",
+            spoken_text="String s ka character aate hi bucket mein plus 1 karo, aur String t ka character aate hi minus 1 karo!",
+            tts_text="स्ट्रिंग एस का कैरेक्टर आते ही बकेट में प्लस वन करो, और स्ट्रिंग टी का कैरेक्टर आते ही माइनस वन करो!",
+            visual_action="Animate string s incrementing counts and string t decrementing counts.",
+            accent_words=["plus 1 karo", "minus 1 karo"],
+            metric="+1 S / -1 T CANCEL",
+            steps=[
+              {"label": "1. Scan String s", "detail": "s[i] hits bucket -> increment count (+1)"},
+              {"label": "2. Scan String t", "detail": "t[i] hits bucket -> decrement count (-1)"},
+              {"label": "3. Perfect Cancellation", "detail": "Identical frequencies cancel each other out!"}
+            ],
+            nodes=[], connections=[]
+          ),
+          dict(
+            id="zero_check",
+            type="concept_visual",
+            title="ALL BUCKETS ZERO",
+            spoken_text="Agar dono strings sach mein anagram hain, toh 26 ke 26 buckets ZERO milenge! Ek bhi non-zero bacha toh false!",
+            tts_text="अगर दोनों स्ट्रिंग्स सच में एनाग्राम हैं, तो छब्बीस के छब्बीस बकेट्स ज़ीरो मिलेंगे! एक भी नॉन-ज़ीरो बचा तो फ़ाल्स!",
+            visual_action="All 26 buckets resolve to 0 with a bright green verification badge.",
+            accent_words=["ZERO milenge", "non-zero bacha"],
+            metric="ALL COUNTS == 0",
+            nodes=[
+              {"label": "Bucket State == 0", "detail": "Every character cancelled out -> TRUE", "color": "#3FB950"},
+              {"label": "Bucket State != 0", "detail": "Count mismatch detected -> FALSE", "color": "#FF5555"}
+            ],
+            connections=[], steps=[]
+          ),
+          dict(
+            id="complexity",
+            type="comparison",
+            title="COMPLEXITY LEAP",
+            spoken_text="Single loop mein O of n time, aur space O of 1 kyunki array fix 26 integers ka hai!",
+            tts_text="सिंगल लूप में ओ ऑफ़ एन टाइम, और स्पेस ओ ऑफ़ वन क्योंकि एरे फ़िक्स छब्बीस इंटीजर्स का है!",
+            visual_action="Contrast O(n log n) sorting with O(n) single-pass bucket count.",
+            accent_words=["O of n time", "space O of 1"],
+            metric="O(N) TIME · O(1) SPACE",
+            nodes=[
+              {"label": "Time Complexity", "detail": "O(N) single pass through strings"},
+              {"label": "Space Complexity", "detail": "O(1) constant fixed 26 buckets"}
+            ],
+            connections=[], steps=[]
+          ),
+          dict(
+            id="summary",
+            type="summary",
+            title="ANAGRAM CHEATSHEET",
+            spoken_text="Yaad rakho: Sorting nahi, 26 frequency buckets! Comment ANAGRAM karo, aur save kar lo — interview mein kaam aayega!",
+            tts_text="याद रखो: सॉर्टिंग नहीं, छब्बीस फ्रीक्वेंसी बकेट्स! कमेंट एनाग्राम करो, और सेव कर लो — इंटरव्यू में काम आएगा!",
+            visual_action="Show PDF cheat sheet card and DM automation CTA.",
+            accent_words=["frequency buckets", "Comment ANAGRAM"],
+            metric="COMMENT ANAGRAM",
+            nodes=[
+              {"label": "Length Check", "detail": "len(s) != len(t) -> return false"},
+              {"label": "26 Buckets", "detail": "+1 on s[i], -1 on t[i]"},
+              {"label": "Verify All 0", "detail": "Return all(count == 0)"}
+            ],
+            connections=[[0, 1], [1, 2]]
+          )
+        ]
     elif "scaling" in clean.lower() or "horizontal" in clean.lower():
         beats = [
           dict(

@@ -176,6 +176,124 @@ def _try_elevenlabs(spoken_script: str, caption_text: str, output_path: Path) ->
     return None
 
 
+_DIGIT_WORDS = {"0": "ज़ीरो", "1": "वन", "2": "टू", "3": "थ्री", "4": "फ़ोर", "5": "फ़ाइव",
+                "6": "सिक्स", "7": "सेवन", "8": "एट", "9": "नाइन"}
+
+
+def _load_pronunciations() -> list[tuple["re.Pattern[str]", str]]:
+    import json
+    import re as _re
+    path = Path(__file__).with_name("pronunciations.json")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rules = []
+    # Longest phrases first so "Shard Key" wins over "Shard"
+    for src, dst in sorted(((k, v) for k, v in data.items() if not k.startswith("_")), key=lambda kv: -len(kv[0])):
+        if src.isalnum() or _re.fullmatch(r"[\w\- ]+", src):
+            pat = _re.compile(r"(?<![\w])" + _re.escape(src) + r"(?![\w])", _re.IGNORECASE)
+        else:
+            pat = _re.compile(_re.escape(src), _re.IGNORECASE)
+        rules.append((pat, dst))
+    return rules
+
+
+def apply_tts_pronunciations(text: str) -> str:
+    """Rewrite English/tech tokens into Devanagari phonetics so Sarvam pronounces them correctly."""
+    import re as _re
+    out = text
+    # Clean quotes and parentheses that break pronunciation boundaries
+    out = _re.sub(r"['\"]", " ", out)
+    out = _re.sub(r"[()]", " ", out)
+    # "Shard-2" / "DB-1" -> "Shard टू" (hyphen+digit glued tokens get misread)
+    out = _re.sub(r"(?<=[A-Za-z])-(\d)\b", lambda m: " " + _DIGIT_WORDS[m.group(1)], out)
+    # Common digit replacements for Hindi TTS
+    out = _re.sub(r"\b26\b", "छब्बीस", out)
+    out = _re.sub(r"\b90%\b", "नब्बे परसेंट", out)
+    out = _re.sub(r"\b100%\b", "सौ परसेंट", out)
+    for pat, dst in _load_pronunciations():
+        out = pat.sub(dst, out)
+    out = out.replace("—", ", ").replace("·", ", ")
+    out = _re.sub(r"\s+,", ",", out)
+    return _re.sub(r"\s{2,}", " ", out).strip()
+
+
+def _leftover_latin_words(text: str) -> list[str]:
+    import re as _re
+    return sorted(set(_re.findall(r"[A-Za-z][A-Za-z_\-]*[A-Za-z]|[A-Za-z]", text)))
+
+
+def _llm_transliterate(words: list[str]) -> dict[str, str]:
+    """Ask the configured LLM for Devanagari phonetic spellings of leftover English words."""
+    import json
+    import os
+    import requests
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("FREELLM_API_KEY")
+    if not api_key or not words:
+        return {}
+    base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    prompt = (
+        "Convert each English/tech word into how an Indian software engineer pronounces it, written in "
+        "Devanagari script. Spell acronyms letter by letter (IOPS -> आई ओ पी एस). Return ONLY a JSON object "
+        "mapping the exact input word to its Devanagari spelling.\nWords: " + json.dumps(words)
+    )
+    try:
+        resp = requests.post(
+            f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "temperature": 0, "response_format": {"type": "json_object"},
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = json.loads(resp.json()["choices"][0]["message"]["content"])
+        return {k: str(v) for k, v in data.items() if isinstance(k, str) and v and k in words}
+    except Exception as exc:
+        print(f"    [pronunciation] LLM transliteration unavailable ({exc})")
+        return {}
+
+
+def ensure_pronounceable(text: str) -> str:
+    """Pronunciation quality gate: no raw English token may reach the Hindi TTS voice.
+
+    1. Apply pronunciations.json rules.
+    2. If the text was written in Devanagari script and still has leftover English words,
+       auto-transliterate them via LLM and save into pronunciations.json.
+    """
+    import json
+    import os
+    has_devanagari_input = bool(re.search(r"[\u0900-\u097F]", text))
+    out = apply_tts_pronunciations(text)
+    if not has_devanagari_input:
+        return out
+    leftovers = _leftover_latin_words(out)
+    if leftovers:
+        learned = _llm_transliterate(leftovers)
+        if learned:
+            path = Path(__file__).with_name("pronunciations.json")
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                data.update(learned)
+                path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"    [pronunciation] Learned {len(learned)} new words: " + ", ".join(f"{k}->{v}" for k, v in learned.items()))
+            except Exception as exc:
+                print(f"    [pronunciation] Could not save learned words ({exc})")
+            out = apply_tts_pronunciations(text)
+            for k, v in learned.items():
+                out = out.replace(k, v)
+        leftovers = _leftover_latin_words(out)
+    if leftovers:
+        msg = f"English words would be mispronounced by the Hindi voice: {', '.join(leftovers)}. Add them to audio_engine/pronunciations.json"
+        if os.getenv("PRONUNCIATION_STRICT", "1") == "1":
+            raise RuntimeError(f"[pronunciation-gate] {msg}")
+        print(f"    [pronunciation-warn] {msg}")
+    else:
+        print("    [pronunciation] OK: 100% Devanagari phonetic script sent to TTS")
+    return out
+
+
 def _try_sarvam_tts(tts_script: str, caption_text: str, output_path: Path) -> tuple[list[dict[str, Any]], float] | None:
     """Attempt synthesis via Sarvam AI Bulbul v2/v3 Indian Hinglish TTS API (https://api.sarvam.ai/text-to-speech)."""
     import base64
@@ -187,9 +305,10 @@ def _try_sarvam_tts(tts_script: str, caption_text: str, output_path: Path) -> tu
     if provider in ("edge", "voicestudio", "elevenlabs") or not api_key:
         return None
 
+    tts_script = ensure_pronounceable(tts_script)
     speaker = os.getenv("SARVAM_VOICE", "shubh").strip().lower() or "shubh"
     model = os.getenv("SARVAM_MODEL", "bulbul:v3").strip() or "bulbul:v3"
-    pace = float(os.getenv("SARVAM_PACE", "1.08"))
+    pace = float(os.getenv("SARVAM_PACE", "1.02"))
     try:
         resp = requests.post(
             "https://api.sarvam.ai/text-to-speech",
@@ -203,7 +322,7 @@ def _try_sarvam_tts(tts_script: str, caption_text: str, output_path: Path) -> tu
                 "speaker": speaker,
                 "model": model,
                 "pace": pace,
-                "enable_preprocessing": True,
+                "enable_preprocessing": False,
             },
             timeout=(5.0, 60.0),
         )

@@ -8,12 +8,20 @@ from typing import Any
 
 import requests
 
-GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
-IG_GRAPH_API_BASE = "https://graph.instagram.com/v21.0"
+def _graph_api_base(instagram_login: bool = False) -> str:
+    version = os.getenv("META_GRAPH_API_VERSION", "v27.0").strip()
+    if not version or "/" in version:
+        raise ValueError("META_GRAPH_API_VERSION must be a version such as v27.0")
+    host = "graph.instagram.com" if instagram_login else "graph.facebook.com"
+    return f"https://{host}/{version}"
+
+
+def _catbox_upload_allowed() -> bool:
+    return os.getenv("ALLOW_PUBLIC_CATBOX_UPLOADS", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def _get_ig_api_base(access_token: str) -> str:
-    return IG_GRAPH_API_BASE if access_token.strip().startswith("IG") else GRAPH_API_BASE
+    return _graph_api_base(instagram_login=access_token.strip().startswith("IG"))
 
 
 def discover_instagram_account_id(access_token: str) -> str:
@@ -25,7 +33,7 @@ def discover_instagram_account_id(access_token: str) -> str:
     token = access_token.strip()
     if token.startswith("IG"):
         resp = requests.get(
-            f"{IG_GRAPH_API_BASE}/me",
+            f"{_graph_api_base(instagram_login=True)}/me",
             params={"fields": "user_id,id,username", "access_token": token},
             timeout=20,
         )
@@ -37,7 +45,7 @@ def discover_instagram_account_id(access_token: str) -> str:
             return ig_id
 
     resp = requests.get(
-        f"{GRAPH_API_BASE}/me/accounts",
+        f"{_graph_api_base()}/me/accounts",
         params={"fields": "id,name,instagram_business_account{id,username}", "access_token": token},
         timeout=20,
     )
@@ -67,15 +75,28 @@ def build_instagram_caption(plan: dict[str, Any]) -> str:
         metric = b.get("metric", "")
         bullet_lines.append(f"⚡ {title}" + (f" ({metric})" if metric else ""))
 
+    family = str(plan.get("topic_family", "general_technical")).lower()
+    family_tags = {
+        "dsa": "#codinginterview #leetcode",
+        "distributed_messaging": "#kafka #distributedSystems",
+        "caching": "#redis #caching",
+        "backend_framework": "#backendengineering #softwaredevelopment",
+        "programming_language": "#programming #softwareengineering",
+        "system_design": "#systemdesign #softwarearchitecture",
+        "general_technical": "#technology #softwareengineering",
+    }
+    tags = f"#{slug_tag} #conceptfirstwithmohit #techreels #indiandevs #hinglish {family_tags.get(family, family_tags['general_technical'])}"
+    if plan.get("auto_dm_enabled") and plan.get("cheatsheet_url"):
+        call_to_action = f"\n\n💬 Comment '{keyword}' aur main aapko {topic} ki PDF notes DM karunga! 🚀"
+    else:
+        call_to_action = "\n\n🔖 Save kar lo aur aise explainers ke liye follow karo."
     caption = (
         f"{hook_text}\n\n"
-        f"📌 {topic} Production Breakdown:\n"
+        f"📌 {topic} breakdown:\n"
         + "\n".join(bullet_lines)
-        + f"\n\n💬 Comment '{keyword}' aur main aapko {topic} ka complete PDF Interview Cheat Sheet & Architecture Notes सीधा DM bhej dunga! 🚀\n\n"
-        f"🔖 Save kar lo — agle System Design interview mein 100% kaam aayega!\n"
-        f"👉 Follow @conceptfirstwithmohit — Technology yaad rakhne se nahi, sochne se aati hai.\n\n"
-        f"#{slug_tag} #conceptfirstwithmohit #systemdesign #backendengineering #softwareengineering #codinginterview "
-        f"#techreels #indiandevs #leetcode #microservices #scalability #devops #dsa #hinglish"
+        + call_to_action
+        + f"\n\n👉 Follow @conceptfirstwithmohit — Technology yaad rakhne se nahi, sochne se aati hai.\n\n"
+        + tags
     )
     return caption
 
@@ -84,12 +105,14 @@ def write_instagram_metadata(plan: dict[str, Any], destination: Path) -> str:
     topic = plan.get("topic", "System Design")
     keyword = "".join(ch for ch in topic if ch.isalnum()).upper()[:12] or "NOTES"
     caption = build_instagram_caption(plan)
+    dm_status = "Enabled for this run" if plan.get("auto_dm_enabled") and plan.get("cheatsheet_url") else "Disabled (manual CTA only)"
     content = (
         "=== INSTAGRAM REEL PUBLISH & DM AUTOMATION METADATA ===\n\n"
         f"DM TRIGGER KEYWORD:\n{keyword}\n\n"
+        f"AUTO-DM STATUS:\n{dm_status}\n\n"
         f"AUTO-DM MESSAGE TEMPLATE:\n"
         f"Hey! 👋 Yeh raha aapka {topic} PDF Interview Cheat Sheet & Architecture Guide: "
-        f"{os.getenv('CHEATSHEET_DEFAULT_URL', 'https://github.com/mohitladia/igr-factory')} 🚀 All the best for your interviews!\n\n"
+        f"{plan.get('cheatsheet_url') or '[PDF link not configured]'} 🚀 All the best for your interviews!\n\n"
         f"CAPTION (Copy-Paste or Auto-Published via Graph API):\n"
         f"{caption}\n"
     )
@@ -117,25 +140,35 @@ def write_youtube_shorts_metadata(
         cursor_sec += float(b.get("audio_duration_seconds") or 8.0)
 
     pdf_banner = f"📄 Free {topic} PDF Interview Cheat Sheet: {pdf_link}\n\n" if pdf_link else ""
-    title = f"{topic} Explained in 60 Seconds! 🔥 (Interview Trick) #shorts #systemdesign"[:100]
+    family = str(plan.get("topic_family", "general_technical")).lower()
+    family_label = family.replace("_", " ")
+    title_tag = {
+        "dsa": "#codinginterview",
+        "distributed_messaging": "#distributedSystems",
+        "caching": "#caching",
+        "backend_framework": "#backendengineering",
+        "programming_language": "#programming",
+        "system_design": "#systemdesign",
+        "general_technical": "#technology",
+    }.get(family, "#technology")
+    title = f"{topic[:60]} Explained in Hinglish {title_tag} #Shorts"[:100]
     description = (
         f"{pdf_banner}"
         f"{hook_text}\n\n"
-        f"In this Hinglish System Design & Backend Engineering Short, we break down {topic} with real production architecture and motion graphics:\n"
+        f"In this Hinglish {family_label} Short, we break down {topic} with a concise visual explanation:\n"
         + "\n".join(chapters)
         + f"\n\n💡 Concept First with Mohit (@ConceptFirstWithMohit)\n"
         f"Technology yaad rakhne se nahi, sochne se aati hai.\n\n"
-        f"#shorts #youtubeshorts #{slug_tag} #conceptfirstwithmohit #systemdesign #backendengineering #codinginterview #softwareengineering #hinglish #techshorts"
+        f"#shorts #youtubeshorts #{slug_tag} #conceptfirstwithmohit {title_tag} #softwareengineering #hinglish #techshorts"
     )
     tags = [
         topic,
-        f"{topic} system design",
+        f"{topic} explained",
         f"{topic} explained in hindi",
         f"{topic} interview questions",
-        "system design hinglish",
-        "backend engineering shorts",
-        "coding interview preparation",
-        "software architecture",
+        f"{family_label} hinglish",
+        "coding interview preparation" if family == "dsa" else "software engineering",
+        "software architecture" if family == "system_design" else "technology explained",
         "tech shorts india",
     ]
     pinned = (
@@ -159,11 +192,19 @@ def write_youtube_shorts_metadata(
 def _upload_temp_public_video(video_path: Path) -> str:
     """
     Instagram Graph API requires a publicly reachable HTTPS URL for the MP4 video.
-    If PUBLIC_VIDEO_URL is not set, uploads temporarily to catbox.moe / 0x0.st.
+    If PUBLIC_VIDEO_URL is not set, Catbox upload requires explicit opt-in.
     """
     explicit_url = os.getenv("PUBLIC_VIDEO_URL", "").strip()
     if explicit_url:
+        if not explicit_url.startswith("https://"):
+            raise ValueError("PUBLIC_VIDEO_URL must be a publicly reachable HTTPS URL")
         return explicit_url
+
+    if not _catbox_upload_allowed():
+        raise RuntimeError(
+            "Instagram needs a public HTTPS video URL. Set PUBLIC_VIDEO_URL to your own hosted MP4, "
+            "or explicitly enable ALLOW_PUBLIC_CATBOX_UPLOADS=true to send it to Catbox."
+        )
 
     with video_path.open("rb") as fh:
         resp = requests.post(
@@ -261,9 +302,10 @@ def auto_dm_keyword_comments(keyword: str, cheatsheet_url: str, media_id: str | 
     if not access_token or not ig_user_id:
         raise RuntimeError("Missing INSTAGRAM_ACCESS_TOKEN or INSTAGRAM_BUSINESS_ACCOUNT_ID in .env.")
 
+    api_base = _get_ig_api_base(access_token)
     if not media_id:
         media_resp = requests.get(
-            f"{GRAPH_API_BASE}/{ig_user_id}/media",
+            f"{api_base}/{ig_user_id}/media",
             params={"fields": "id,caption,timestamp", "limit": 1, "access_token": access_token},
             timeout=30,
         )
@@ -273,23 +315,51 @@ def auto_dm_keyword_comments(keyword: str, cheatsheet_url: str, media_id: str | 
             return {"checked": 0, "dms_sent": 0}
         media_id = items[0]["id"]
 
-    comments_resp = requests.get(
-        f"{GRAPH_API_BASE}/{media_id}/comments",
-        params={"fields": "id,text,username", "limit": 50, "access_token": access_token},
-        timeout=30,
-    )
-    comments_resp.raise_for_status()
-    comments = comments_resp.json().get("data", [])
+    state_dir = Path(__file__).resolve().parent.parent / "output" / "state" / "instagram_dm"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    safe_media_id = "".join(ch for ch in str(media_id) if ch.isalnum() or ch in "-_")
+    if not safe_media_id:
+        raise ValueError("Instagram returned an invalid media ID")
+    state_path = state_dir / f"{safe_media_id}.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(f"Instagram DM state is unreadable ({state_path}); refusing to risk duplicate DMs.") from exc
+    if not isinstance(state, dict):
+        raise RuntimeError(f"Instagram DM state has an invalid format ({state_path}); refusing to risk duplicate DMs.")
+    sent_ids = set(str(item) for item in state.get("sent_comment_ids", []))
+    processed_ids = set(str(item) for item in state.get("processed_comment_ids", []))
 
-    kw_upper = keyword.strip().upper()
+    comments: list[dict[str, Any]] = []
+    after: str | None = None
+    while True:
+        params: dict[str, Any] = {"fields": "id,text,username", "limit": 100, "access_token": access_token}
+        if after:
+            params["after"] = after
+        comments_resp = requests.get(f"{api_base}/{media_id}/comments", params=params, timeout=30)
+        comments_resp.raise_for_status()
+        page = comments_resp.json()
+        page_comments = page.get("data", [])
+        unseen = [comment for comment in page_comments if str(comment.get("id", "")) not in processed_ids]
+        if not unseen:
+            break
+        comments.extend(unseen)
+        paging = page.get("paging", {})
+        next_after = paging.get("cursors", {}).get("after")
+        if not paging.get("next") or not next_after or next_after == after:
+            break
+        after = str(next_after)
+
+    kw_upper = "".join(ch for ch in keyword.upper() if ch.isalnum())
     dms_sent = 0
+    processed_this_run = 0
     for c in comments:
-        text = str(c.get("text", "")).upper()
         cid = c.get("id")
-        if kw_upper in text and cid:
+        text = "".join(ch for ch in str(c.get("text", "")).upper() if ch.isalnum())
+        if kw_upper and kw_upper in text and cid and str(cid) not in sent_ids:
             # Send Private Reply DM linked to the comment
             dm_resp = requests.post(
-                f"{GRAPH_API_BASE}/{ig_user_id}/messages",
+                f"{api_base}/{ig_user_id}/messages",
                 headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
                 json={
                     "recipient": {"comment_id": cid},
@@ -299,13 +369,36 @@ def auto_dm_keyword_comments(keyword: str, cheatsheet_url: str, media_id: str | 
                 },
                 timeout=30,
             )
-            if dm_resp.status_code in {200, 201}:
-                dms_sent += 1
-    return {"media_id": media_id, "checked": len(comments), "dms_sent": dms_sent}
+            if dm_resp.status_code not in {200, 201}:
+                raise RuntimeError(f"Instagram DM failed for comment {cid}: HTTP {dm_resp.status_code} {dm_resp.text[:300]}")
+            sent_ids.add(str(cid))
+            dms_sent += 1
+        if cid:
+            processed_ids.add(str(cid))
+            processed_this_run += 1
+        state_tmp = state_path.with_suffix(".json.tmp")
+        state_tmp.write_text(
+            json.dumps(
+                {
+                    "media_id": media_id,
+                    "sent_comment_ids": sorted(sent_ids),
+                    "processed_comment_ids": sorted(processed_ids),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        state_tmp.replace(state_path)
+    return {"media_id": media_id, "checked": processed_this_run, "dms_sent": dms_sent}
 
 
 def upload_public_asset(file_path: Path, mime_type: str = "application/pdf") -> str:
     """Uploads a local PDF Cheat Sheet or MP4 to catbox.moe and returns a public HTTPS URL."""
+    if not _catbox_upload_allowed():
+        raise RuntimeError(
+            "Catbox is a public third-party host. Set ALLOW_PUBLIC_CATBOX_UPLOADS=true to opt in, "
+            "or provide your own public asset URL."
+        )
     with file_path.open("rb") as fh:
         resp = requests.post(
             "https://catbox.moe/user/api.php",
@@ -318,23 +411,63 @@ def upload_public_asset(file_path: Path, mime_type: str = "application/pdf") -> 
     raise RuntimeError(f"Could not upload {file_path.name} to public storage.")
 
 
+def ensure_cheatsheet_url(plan: dict[str, Any], pdf_path: Path) -> str:
+    """Resolve a public link for the generated PDF only when the user enabled DM delivery."""
+    configured = os.getenv("CHEATSHEET_DEFAULT_URL", "").strip()
+    if configured:
+        if not configured.startswith("https://"):
+            raise ValueError("CHEATSHEET_DEFAULT_URL must be a publicly reachable HTTPS URL")
+        plan["cheatsheet_url"] = configured
+        return configured
+    if not pdf_path.exists():
+        raise RuntimeError(f"Generated PDF not found: {pdf_path}")
+    url = upload_public_asset(pdf_path, "application/pdf")
+    plan["cheatsheet_url"] = url
+    return url
+
+
 def refresh_youtube_access_token() -> str:
     """
-    Exchanges YOUTUBE_REFRESH_TOKEN in .env for a fresh YOUTUBE_ACCESS_TOKEN
-    via Google OAuth Playground's token refresh endpoint so uploads never fail with 401.
+    Exchanges YOUTUBE_REFRESH_TOKEN in .env for a fresh YOUTUBE_ACCESS_TOKEN.
+
+    Preferred (permanent): if YOUTUBE_CLIENT_ID + YOUTUBE_CLIENT_SECRET are set (your own
+    Google Cloud OAuth client), refresh directly against oauth2.googleapis.com.
+    Fallback: Google OAuth Playground's refresh endpoint. Note that refresh tokens issued to the
+    Playground's default client are auto-revoked by Google after ~24 hours.
     """
     refresh_tok = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
     if not refresh_tok:
         raise RuntimeError("Missing YOUTUBE_REFRESH_TOKEN in .env for automatic token refresh.")
-    resp = requests.post(
-        "https://developers.google.com/oauthplayground/refreshAccessToken",
-        json={"token_uri": "https://oauth2.googleapis.com/token", "refresh_token": refresh_tok},
-        timeout=30,
-    )
+    client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+    if client_id and client_secret:
+        resp = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_tok,
+                "grant_type": "refresh_token",
+            },
+            timeout=30,
+        )
+    else:
+        resp = requests.post(
+            "https://developers.google.com/oauthplayground/refreshAccessToken",
+            json={"token_uri": "https://oauth2.googleapis.com/token", "refresh_token": refresh_tok},
+            timeout=30,
+        )
+    body_text = resp.text
+    if "invalid_grant" in body_text:
+        raise RuntimeError(
+            "YouTube refresh token expired or revoked (invalid_grant). Tokens from OAuth Playground's "
+            "default client expire after ~24h. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET from your "
+            "own Google Cloud OAuth client (app published 'In production') and generate a new refresh token."
+        )
     resp.raise_for_status()
     new_token = str(resp.json().get("access_token") or "").strip()
     if not new_token:
-        raise RuntimeError(f"OAuth token refresh did not return an access_token: {resp.text}")
+        raise RuntimeError(f"OAuth token refresh did not return an access_token: {body_text}")
     os.environ["YOUTUBE_ACCESS_TOKEN"] = new_token
     return new_token
 

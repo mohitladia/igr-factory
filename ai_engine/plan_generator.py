@@ -18,12 +18,14 @@ ALLOWED_TYPES = {
 SYSTEM_PROMPT = """CRITICAL TOPIC LOCK: Teach only the exact topic supplied by the user. Never substitute Kafka or any default topic. Choose a topic-specific teaching format. For DSA problems include problem statement, baseline approach, optimized approach, dry run, and complexity. For frameworks explain lifecycle and mechanisms. For infrastructure explain architecture and tradeoffs. Every beat must directly teach the requested topic. Separate viewer-facing title/spoken_text from internal visual_action and asset_prompt. NEVER display visual_action, asset_prompt, internal_notes, or production directions as on-screen text. Never use generic placeholders such as System component, Component, or Step. If unable to create accurate topic-specific content, fail rather than switch topics.
 
 STORYTELLING & BENCHMARK RULES (@backendlore style):
-1. HOOK (Beat 1): Start with a concrete, high-stakes production dilemma with numbers (e.g., "Interviewer ne poocha: 4 Redis servers mein se 1 crash hua toh Modulo Hashing se 90% cache miss kyun ho jata hai?"). Never use "brute force" unless the topic is a DSA array/graph problem. Never start with "Today we will discuss".
-2. PROBLEM & NAIVE TRAP (Beat 2): Show exactly why the naive approach fails in production with concrete numbers (e.g., "hash(key) % N mein N=4 se N=3 hote hi har key ka remainder badal jata hai -> Cache Stampede!").
-3. INTUITIVE MENTAL MODEL (Beats 3-4): Explain the core mechanism through a visual physical analogy (e.g., "360-degree Clock / Hash Ring jahan servers aur keys dono circle par baith-te hain aur clockwise agle server par jaate hain", "Virtual Nodes").
-4. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior Indian tech lead explaining 1-on-1 in natural Hinglish. Never use "/" slashes in spoken_text or tts_text (write "aur" or "ya" instead).
-5. PACING: Keep each spoken_text beat concise and punchy (14-24 words).
-6. OUTRO CTA & INFINITE SEAMLESS LOOP: Final beat summarizes the key takeaway + asks a clever edge-case question + "Comment [KEYWORD] for PDF notes!". Crucially, the last sentence must flow seamlessly back into Beat 1's hook so viewers watch it twice on loop without noticing the cut!
+1. HOOK (Beat 1): Start with a concrete, high-stakes production dilemma with numbers (e.g., "Interviewer ne poocha: 4 Redis servers mein se 1 crash hua toh Modulo Hashing se 90% cache miss kyun ho jata hai?"). For DSA: "Interview mein [Problem] pucha toh 90% log [Naive/Sorting] bolte hain aur turant reject!". Never start with "Today we will discuss".
+2. PROBLEM & NAIVE TRAP (Beat 2): Show exactly why the naive approach fails in production with concrete numbers (e.g., in System Design: "hash(key) % N mein N=4 se N=3 hote hi Cache Stampede!", in DSA: "Dono strings sort karna O(n log n) leta hai — interviewer O(n) single pass chahta hai!").
+3. INTUITIVE MENTAL MODEL (Beats 3-4): Explain the core mechanism through a visual physical analogy (e.g., System Design: "360-degree Clock / Hash Ring", DSA: "26-bucket balance scale jahan string 1 aate hi +1, string 2 aate hi -1", "Memory Diary"). NEVER recommend slow Sorting O(n log n) when O(n) Hash/Frequency array exists!
+4. DRY RUN & PROOF (Beat 4-5): Walk through a concrete, vivid example (e.g. 'listen' vs 'silent' showing buckets zeroing out, or key routing).
+5. COMPLEXITY & WIN: Emphasize the exact algorithmic leap (e.g., O(n log n) dropped to O(n) time, O(1) space).
+6. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior Indian tech lead explaining 1-on-1 in natural Hinglish. Never use "/" slashes in spoken_text or tts_text (write "aur" or "ya" instead).
+7. PACING: Keep each spoken_text beat concise and punchy (14-24 words).
+8. OUTRO CTA & INFINITE SEAMLESS LOOP: Final beat summarizes the key takeaway + asks a clever edge-case question + "Comment [KEYWORD] for PDF notes!". Crucially, the last sentence must flow seamlessly back into Beat 1's hook so viewers watch it twice on loop without noticing the cut!
 
 OUTPUT FORMAT:
 Return ONLY valid JSON. Do not add Markdown fences or commentary.
@@ -102,18 +104,21 @@ _ACRONYM_TO_DEVANAGARI: dict[str, str] = {
 
 
 def ensure_devanagari_tts_text(spoken_text: str, tts_text: str | None = None) -> str:
-    """Ensure tts_text has Devanagari Hindi phonetics and proper acronym pronunciation."""
+    """Ensure tts_text has 100% Devanagari Hindi phonetics via the pronunciation engine."""
     candidate = (tts_text or "").strip()
     source = candidate if (candidate and re.search(r"[\u0900-\u097F]", candidate)) else (candidate or spoken_text.strip())
+    try:
+        from audio_engine.voice_generator import ensure_pronounceable
+        return ensure_pronounceable(source)
+    except Exception:
+        def _replace_token(match: re.Match[str]) -> str:
+            word = match.group(0)
+            low = word.lower()
+            if low in _ACRONYM_TO_DEVANAGARI:
+                return _ACRONYM_TO_DEVANAGARI[low]
+            return _ROMAN_TO_DEVANAGARI.get(low, word)
 
-    def _replace_token(match: re.Match[str]) -> str:
-        word = match.group(0)
-        low = word.lower()
-        if low in _ACRONYM_TO_DEVANAGARI:
-            return _ACRONYM_TO_DEVANAGARI[low]
-        return _ROMAN_TO_DEVANAGARI.get(low, word)
-
-    return re.sub(r"[A-Za-z]+(?:-[A-Za-z]+)?", _replace_token, source)
+        return re.sub(r"[A-Za-z]+(?:-[A-Za-z]+)?", _replace_token, source)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -138,14 +143,20 @@ def _endpoint() -> str:
 
 
 def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
-    api_key = os.getenv("FREELLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("FREELLM_API_KEY")
     if not api_key:
-        raise RuntimeError("No LLM key found. Set FREELLM_API_KEY or OPENAI_API_KEY in .env, or run with --demo.")
+        raise RuntimeError("No LLM key found. Set OPENAI_API_KEY or FREELLM_API_KEY in .env, or run with --demo.")
 
-    preferred_model = os.getenv("OPENAI_MODEL", "mistral-large-3")
-    if preferred_model == "auto":
-        preferred_model = "mistral-large-3"
-    candidate_models = [preferred_model, "claude-sonnet-4-5", "auto"]
+    is_official_openai = "api.openai.com" in _endpoint() or (api_key.startswith("sk-") and not api_key.startswith("freellm"))
+    default_model = "gpt-4o-mini" if is_official_openai else "auto"
+    preferred_model = os.getenv("OPENAI_MODEL", default_model)
+    if preferred_model == "auto" and is_official_openai:
+        preferred_model = "gpt-4o-mini"
+
+    if is_official_openai:
+        candidate_models = [preferred_model, "gpt-4o-mini", "gpt-4o"]
+    else:
+        candidate_models = [preferred_model, "claude-haiku-4-5", "auto"]
     profile = classify_topic(topic)
     yt_research = fetch_youtube_research(topic, max_results=3)
     yt_context = yt_research.get("context_block", "")
@@ -174,7 +185,7 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
                 {"role": "user", "content": user_prompt},
             ],
         }
-        timeout_s = int(os.getenv("LLM_TIMEOUT", "8"))
+        timeout_s = int(os.getenv("LLM_TIMEOUT", "30"))
         try:
             response = requests.post(_endpoint(), headers=headers, json=payload, timeout=timeout_s)
             if response.status_code in {400, 404, 422}:
@@ -311,6 +322,25 @@ def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
             "steps": clean_steps,
             "metric": str(item.get("metric", ""))[:35],
         })
+    if clean_beats:
+        last = clean_beats[-1]
+        last_spoken = last["spoken_text"]
+        last_tts = last.get("tts_text") or ""
+        # Choose a clean, pronounceable keyword: if topic has multiple words, pick the main noun
+        topic_words = [w for w in re.findall(r"[A-Za-z]+", topic) if w.lower() not in ("valid", "the", "an", "a", "problem", "solution")]
+        kw = topic_words[-1].upper() if topic_words else "NOTES"
+        if not any(w in last_spoken.lower() for w in ("comment", "pdf", "notes", "cheat sheet")):
+            last["spoken_text"] = f"{last_spoken.rstrip('.!')}. Comment {kw} for complete PDF interview notes!"
+            if last_tts and re.search(r"[\u0900-\u097F]", last_tts):
+                last["tts_text"] = f"{last_tts.rstrip('।!.')}। कमेंट {kw} करो और कंप्लीट पी डी एफ नोट्स सेव कर लो!"
+                last["tts_text"] = ensure_devanagari_tts_text(last["spoken_text"], last["tts_text"])
+            else:
+                last["tts_text"] = ensure_devanagari_tts_text(last["spoken_text"], None)
+            if not last.get("accent_words"):
+                last["accent_words"] = ["Comment", kw]
+            elif kw not in last["accent_words"]:
+                last["accent_words"].append(kw)
+
     if len(clean_beats) < 4:
         raise ValueError(f"AI returned only {len(clean_beats)} beats; expected at least 4. Retry with a stronger prompt.")
     return {
