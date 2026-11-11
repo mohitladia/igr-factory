@@ -8,7 +8,12 @@ output/runs/*
 output/final/*
 output/samples/*
 output/reference/*
+output/frames/*
+output/branding/*
+output/branding/*.wav
 !my-video/public/audio/bg_ambient.mp3
 my-video/public/audio/beat_*
+my-video/public/audio/[0-9]*.mp3
 my-video/public/assets/*
+my-video/public/cover.png
 my-video/src/data/plan.json

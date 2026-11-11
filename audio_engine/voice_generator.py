@@ -203,6 +203,12 @@ def apply_tts_pronunciations(text: str) -> str:
     """Rewrite English/tech tokens into Devanagari phonetics so Sarvam pronounces them correctly."""
     import re as _re
     out = text
+    # Standard Big-O pronunciations in Devanagari
+    out = _re.sub(r"\bO\s*\(?\s*[nN]\s*log\s*[nN]\s*\)?\b", "ओ ऑफ़ एन लॉग एन", out, flags=_re.I)
+    out = _re.sub(r"\bO\s*\(?\s*[nN]\s*\)?\b", "ओ ऑफ़ एन", out)
+    out = _re.sub(r"\bO\s*\(?\s*1\s*\)?\b", "ओ ऑफ़ वन", out)
+    out = _re.sub(r"\bO\s+1\b", "ओ ऑफ़ वन", out)
+    out = _re.sub(r"\bO\s+[nN]\b", "ओ ऑफ़ एन", out)
     # Clean quotes and parentheses that break pronunciation boundaries
     out = _re.sub(r"['\"]", " ", out)
     out = _re.sub(r"[()]", " ", out)
