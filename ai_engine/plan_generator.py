@@ -24,15 +24,17 @@ ALLOWED_TYPES = {
 
 SYSTEM_PROMPT = """CRITICAL TOPIC LOCK: Teach only the exact topic supplied by the user. Never substitute Kafka or any default topic. Choose a topic-specific teaching format. For DSA problems include problem statement, baseline approach, optimized approach, dry run, and complexity. For frameworks explain lifecycle and mechanisms. For infrastructure explain architecture and tradeoffs. Every beat must directly teach the requested topic. Separate viewer-facing title/spoken_text from internal visual_action and asset_prompt. NEVER display visual_action, asset_prompt, internal_notes, or production directions as on-screen text. Never use generic placeholders such as System component, Component, or Step. If unable to create accurate topic-specific content, fail rather than switch topics.
 
-STORYTELLING & BENCHMARK RULES (@backendlore style):
-1. HOOK (Beat 1): Start with a concrete, high-stakes production dilemma with numbers (e.g., "Interviewer ne poocha: 4 Redis servers mein se 1 crash hua toh Modulo Hashing se 90% cache miss kyun ho jata hai?"). For DSA: "Interview mein [Problem] pucha toh 90% log [Naive/Sorting] bolte hain aur turant reject!". Never start with "Today we will discuss".
-2. PROBLEM & NAIVE TRAP (Beat 2): Show exactly why the naive approach fails in production with concrete numbers (e.g., in System Design: "hash(key) % N mein N=4 se N=3 hote hi Cache Stampede!", in DSA: "Dono strings sort karna O(n log n) leta hai — interviewer O(n) single pass chahta hai!").
-3. INTUITIVE MENTAL MODEL (Beats 3-4): Explain the core mechanism through a visual physical analogy (e.g., System Design: "360-degree Clock / Hash Ring", DSA: "26-bucket balance scale jahan string 1 aate hi +1, string 2 aate hi -1", "Memory Diary"). NEVER recommend slow Sorting O(n log n) when O(n) Hash/Frequency array exists!
-4. DRY RUN & PROOF (Beat 4-5): Walk through a concrete, vivid example (e.g. 'listen' vs 'silent' showing buckets zeroing out, or key routing).
-5. COMPLEXITY & WIN: Emphasize the exact algorithmic leap (e.g., O(n log n) dropped to O(n) time, O(1) space).
-6. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior Indian tech lead explaining 1-on-1 in natural Hinglish. Never use "/" slashes in spoken_text (write "aur" or "ya" instead).
-7. PACING: Keep each spoken_text beat concise and punchy (14-24 words).
-8. OUTRO CTA & INFINITE SEAMLESS LOOP: Final beat summarizes the key takeaway + asks a clever edge-case question + "Comment [KEYWORD] for PDF notes!". Crucially, the last sentence must flow seamlessly back into Beat 1's hook so viewers watch it twice on loop without noticing the cut!
+STORYTELLING & BENCHMARK RULES (@backendlore 9.5+/10 GOLD STANDARD):
+1. EASY TO UNDERSTAND + FULL TECHNICAL CONTEXT (CRITICAL):
+   - Explain like a senior Indian engineer talking to a friend in simple, relatable Hinglish, BUT NEVER water down the real engineering depth!
+   - Always pair a vivid everyday analogy ("Socho jaise GPS map par coordinates...", "Memory Diary", "26-bucket tarazu") WITH the exact technical mechanism, real numbers, and algorithm names (e.g., for AI Embeddings: why SQL/Keyword search fails on 'sasta phone' vs 'budget mobile', 1536-dimension vector coordinates, King - Man + Woman = Queen vector math, Cosine Similarity angle check, and HNSW Graph Index in Vector DBs).
+2. HOOK (Beat 1): Start with a concrete, high-stakes interview or production dilemma with numbers and a "?" question mark (14-20 words). MUST include one of: "Interview", "kaise", "kyun", "90%", "fail", "reject", "crash", "socho". Never start with textbook definitions.
+3. PROBLEM & NAIVE TRAP (Beat 2, type="comparison" with 2 nodes: Naive Bottleneck vs Smart Solution): Show why the naive approach (e.g., Keyword Search / Brute Force / Sorting) fails in production with concrete numbers.
+4. INTUITIVE MENTAL MODEL (Beat 3): Use "Socho jaise..." with a physical analogy (GPS map coordinates, diary, balance scale, clock ring) + concrete numbers (e.g., 1536 dimensions, 26 buckets, 360 degrees).
+5. DRY RUN & VECTOR/DATA PROOF (Beat 4): Walk through a concrete example with real inputs and outputs (e.g., 'King' - 'Man' + 'Woman' = 'Queen', or 'sasta phone' matching 'budget mobile' with 0.94 Cosine Similarity).
+6. CORE MECHANISM & PRODUCTION SCALE (Beats 5-6): Explain how similarity/lookup works under the hood (e.g., Cosine Similarity angle between vectors, and why HNSW Graph Index beats slow O(n) brute-force scan across 10 million vectors).
+7. CONVERSATIONAL HINGLISH & PACING: Keep EVERY beat between 14 and 22 words (NO slashes "/", NO filler like "Simple hai!").
+8. OUTRO CTA & SEAMLESS LOOP (Final Beat ONLY has type="summary"): Summarize the key takeaway + ask an engaging architectural question + "Comment [KEYWORD] for complete PDF interview notes!". Only the LAST beat may use type="summary". Never use generic labels like "Step 1", "Step 2" in steps.
 
 OUTPUT FORMAT:
 Return ONLY valid JSON. Do not add Markdown fences or commentary.
@@ -118,6 +120,27 @@ _ROMAN_TO_DEVANAGARI: dict[str, str] = {
     "rupaye": "रुपये", "saare": "सारे", "sahi": "सही", "sawal": "सवाल", "second": "सेकंड",
     "session": "सेशन", "smart": "स्मार्ट", "square": "स्क्वायर", "store": "स्टोर", "tukdon": "टुकड़ों",
     "yahi": "यही",
+    "aapke": "आपके", "duniya": "दुनिया", "embeddings": "एम्बेडिंग्स", "jaise": "जैसे", "king": "किंग",
+    "queen": "क्वीन", "billion": "बिलियन", "million": "मिलियन", "capture": "कैप्चर", "case": "केस",
+    "clear": "क्लियर", "closely": "क्लोज़ली", "computation": "कम्प्यूटेशन", "cost": "कॉस्ट",
+    "depend": "डिपेंड", "din": "दिन", "form": "फ़ॉर्म", "high": "हाई", "low": "लो", "madad": "मदद",
+    "meaning": "मीनिंग", "neural": "न्यूरल", "numeric": "न्यूमेरिक", "opinion": "ओपिनियन",
+    "powerful": "पावरफुल", "proximity": "प्रॉक्सिमिटी", "quality": "क्वालिटी",
+    "relationships": "रिलेशनशिप्स", "relationship": "रिलेशनशिप", "represent": "रिप्रेज़ेंट",
+    "samajhne": "समझने", "samajhta": "समझता", "samajhti": "समझती", "samjhe": "समझे",
+    "searches": "सर्चेस", "search": "सर्च", "through": "थ्रू", "train": "ट्रेन", "training": "ट्रेनिंग",
+    "unki": "उनकी", "unke": "उनके", "use": "यूज़", "vectors": "वेक्टर्स", "words": "वर्ड्स",
+    "word": "वर्ड", "dimensions": "डायमेंशन्स", "dimension": "डायमेंशन", "cosine": "कोसाइन",
+    "similarity": "सिमिलैरिटी", "distance": "डिस्टेंस", "space": "स्पेस", "coordinate": "कोऑर्डिनेट",
+    "coordinates": "कोऑर्डिनेट्स", "map": "मैप", "token": "टोकन", "tokens": "टोकन्स", "semantic": "सिमेंटिक",
+    "swiggy": "स्विगी", "gps": "जी पी एस", "latitude": "लैटिट्यूड", "longitude": "लॉन्गिट्यूड",
+    "sasta": "सस्ता", "phone": "फ़ोन", "budget": "बजट", "mobile": "मोबाइल", "man": "मैन", "woman": "वुमन",
+    "dot": "डॉट", "product": "प्रोडक्ट", "angle": "एंगल", "hnsw": "एच एन एस डब्ल्यू", "graph": "ग्राफ़",
+    "keyword": "कीवर्ड", "exact": "एग्ज़ैक्ट", "match": "मैच", "miss": "मिस", "relevant": "रेलेवेंट",
+    "results": "रिज़ल्ट्स", "milliseconds": "मिलीसेकंड्स", "ms": "मिलीसेकंड", "paas": "पास",
+    "pass": "पास", "baith": "बैठ", "baithte": "बैठते", "kareeb": "क़रीब", "napna": "नापना",
+    "bhasha": "भाषा", "computer": "कंप्यूटर", "computers": "कंप्यूटर्स", "id": "आई डी", "ids": "आई डीज़",
+    "relation": "रिलेशन", "zero": "ज़ीरो", "nikalo": "निकालो", "nikalta": "निकलता", "land": "लैंड",
 }
 
 
@@ -311,6 +334,41 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
         raise RuntimeError(f"LLM request failed across candidate models: {last_exc}")
 
     plan = _extract_json(content)
+    try:
+        from ai_engine.critic import evaluate_plan_quality
+        report = evaluate_plan_quality(plan)
+        if report.score < 9.5:
+            refine_prompt = (
+                f"Your previous storyboard for '{topic}' scored {report.score}/10, below the required 9.5/10 bar.\n"
+                f"Critic feedback to fix: {'; '.join(report.feedback or ['Add a vivid everyday analogy (Socho jaise GPS map...) AND deeper technical context with numbers, and keep every beat 14-22 words'])}\n"
+                "Rewrite the JSON storyboard so it scores 9.5+/10: keep language simple and relatable in Hinglish, "
+                "include a vivid analogy ('Socho jaise...') + full engineering depth (naive keyword/brute-force failure, "
+                "concrete numbers/dimensions, exact mechanism, production scale), keep every beat 14-22 words, "
+                "and end with 'Comment [KEYWORD] for complete PDF interview notes!'. Return JSON only."
+            )
+            refine_payload = {
+                "model": selected_model,
+                "temperature": 0.5,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                    {"role": "assistant", "content": content},
+                    {"role": "user", "content": refine_prompt},
+                ],
+            }
+            r2 = requests.post(_endpoint(), headers=headers, json=refine_payload, timeout=int(os.getenv("LLM_TIMEOUT", "30")))
+            if r2.status_code == 200:
+                c2 = r2.json()["choices"][0]["message"]["content"]
+                p2 = _extract_json(c2)
+                if isinstance(p2.get("beats"), list) and len(p2["beats"]) >= 5:
+                    rep2 = evaluate_plan_quality(p2)
+                    print(f"[critic-refine] Upgraded storyboard score: {report.score}/10 -> {rep2.score}/10")
+                    if rep2.score >= report.score:
+                        plan = p2
+    except Exception as refine_exc:
+        print(f"[critic-refine] Skipped refinement ({refine_exc})")
+
     _review_topic_alignment(topic, plan, headers, selected_model)
     print(f"[topic-review] Storyboard matches requested topic: {topic}")
     plan.setdefault("title", f"{topic}: explained")

@@ -69,32 +69,58 @@ def evaluate_plan_quality(plan: dict[str, Any]) -> QualityReport:
         hook_score = min(hook_score, 4.0)
         feedback.append("Hook is too textbook-like or generic. Start with a concrete high-stakes interview question with real numbers.")
 
-    # 2. Intuition & Mental Model Evaluation
+    # 2. Intuition & Technical Depth Evaluation (Easy Analogy + Deep Context)
     intuition_score = 5.0
-    mental_models = [
-        "diary", "socho", "analogy", "metaphor", "example",
-        "trick", "instantly", "single pass", "behind the scenes",
-        "real life", "tape", "counter", "pukaaro", "khali",
+    analogy_cues = [
+        "diary", "map", "gps", "coordinate", "coordinates", "tarazu", "scale", "clock",
+        "real life", "tape", "counter", "pukaaro", "khali", "address", "location",
+        "swiggy", "compass", "librarian", "highway", "lane", "gate", "bucket", "ring",
+    ]
+    depth_cues = [
         "modulo", "formula", "co-locate", "ceiling", "ring",
         "overlap", "chunks", "hashmap", "round-robin", "zero downtime",
         "bit", "bits", "hash", "cache", "filter", "queue", "partition",
-        "token", "bucket", "graph", "tree", "pointer", "shards", "replica"
+        "token", "bucket", "graph", "tree", "pointer", "shards", "replica",
+        "cosine", "vector", "dimension", "dimensions", "hnsw", "index",
+        "dot product", "angle", "keyword", "semantic", "o(n)", "o(1)",
     ]
-    if any(m in all_text for m in mental_models):
-        intuition_score += 4.0
+    has_analogy = any(m in all_text for m in analogy_cues)
+    depth_hits = sum(1 for m in depth_cues if m in combined_script)
+    has_numbers = len(re.findall(r"\b\d+\b", combined_script)) >= 3
+    has_filler = any(f in all_text for f in ("simple hai!", "mathematical representation"))
+
+    if has_analogy and not has_filler:
+        intuition_score += 2.5
+    elif has_analogy:
+        intuition_score += 1.5
+        feedback.append("Avoid textbook filler like 'mathematical representation' or 'Simple hai!'; explain via the physical analogy directly.")
     else:
-        feedback.append("Script lacks a relatable mental model or physical analogy. Avoid purely academic definitions.")
+        feedback.append("Script lacks a concrete physical analogy (use words like 'GPS map', 'coordinates', 'diary', 'scale', 'address').")
+
+    if depth_hits >= 2 and has_numbers:
+        intuition_score += 2.5
+    elif depth_hits >= 1:
+        intuition_score += 1.5
+        feedback.append("Add deeper engineering context (concrete numbers, algorithm names, and why naive fails).")
+    else:
+        feedback.append("Script is too shallow/textbook. Include real technical mechanisms and numbers without losing simplicity.")
 
     # 3. Pacing & Word Count Evaluation
-    pacing_score = 9.0
+    pacing_score = 10.0
     overlong = []
+    too_short = []
     for i, b in enumerate(beats, 1):
         count = len(str(b.get("spoken_text", "")).split())
         if count > 24:
             overlong.append(f"Beat {i} ({count} words)")
+        elif count < 10:
+            too_short.append(f"Beat {i} ({count} words)")
     if overlong:
         pacing_score -= min(4.0, len(overlong) * 1.5)
-        feedback.append(f"Overlong beats detected: {', '.join(overlong)}. Split into punchier micro-beats.")
+        feedback.append(f"Overlong beats detected: {', '.join(overlong)}. Keep each beat 14-22 words.")
+    if too_short:
+        pacing_score -= min(2.0, len(too_short) * 1.0)
+        feedback.append(f"Under-explained beats detected: {', '.join(too_short)}. Give full context in 14-22 words.")
 
     # 4. CTA & Community Trigger Evaluation
     last_beat = beats[-1]
@@ -102,7 +128,7 @@ def evaluate_plan_quality(plan: dict[str, Any]) -> QualityReport:
     cta_score = 5.0
     cta_cues = ["comment", "pdf", "notes", "follow", "save", "cheat sheet"]
     if any(c in last_text for c in cta_cues):
-        cta_score += 4.5
+        cta_score += 5.0
     else:
         feedback.append("Outro lacks an active engagement prompt (e.g. 'Comment [TOPIC] for complete PDF notes').")
 

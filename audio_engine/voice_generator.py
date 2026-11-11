@@ -261,34 +261,24 @@ def _llm_transliterate(words: list[str]) -> dict[str, str]:
         return {}
 
 
-def ensure_pronounceable(text: str) -> str:
+def ensure_pronounceable(text: str, allow_llm: bool = False) -> str:
     """Pronunciation quality gate: no raw English token may reach the Hindi TTS voice.
 
     1. Apply pronunciations.json rules.
-    2. If the text was written in Devanagari script and still has leftover English words,
-       auto-transliterate them via LLM and save into pronunciations.json.
+    2. If allow_llm=True and the text still has leftover English words,
+       transliterate them via LLM in-memory so TTS speaks 100% Devanagari.
     """
-    import json
     import os
     has_devanagari_input = bool(re.search(r"[\u0900-\u097F]", text))
     out = apply_tts_pronunciations(text)
     if not has_devanagari_input:
         return out
     leftovers = _leftover_latin_words(out)
-    if leftovers and os.getenv("TTS_AUTO_LEARN", "0") == "1":
+    if leftovers and (allow_llm or os.getenv("TTS_AUTO_LEARN", "0") == "1"):
         learned = _llm_transliterate(leftovers)
         if learned:
-            path = Path(__file__).with_name("pronunciations.json")
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                data.update(learned)
-                path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(f"    [pronunciation] Learned {len(learned)} new words: " + ", ".join(f"{k}->{v}" for k, v in learned.items()))
-            except Exception as exc:
-                print(f"    [pronunciation] Could not save learned words ({exc})")
-            out = apply_tts_pronunciations(text)
-            for k, v in learned.items():
-                out = out.replace(k, v)
+            for k, v in sorted(learned.items(), key=lambda kv: -len(kv[0])):
+                out = re.sub(r"(?<![\w])" + re.escape(k) + r"(?![\w])", v, out)
         leftovers = _leftover_latin_words(out)
     if leftovers:
         msg = f"English words would be mispronounced by the Hindi voice: {', '.join(leftovers)}. Add them to audio_engine/pronunciations.json"
@@ -663,7 +653,7 @@ def generate_beat_audio(plan: dict[str, Any], root: Path, run_dir: Path, voice: 
         filename = f"{index:02d}_{beat_id}.mp3"
         source = audio_dir / filename
         # Single source of truth: the voice script is ALWAYS derived from the caption narration.
-        beat["tts_text"] = build_tts_text(beat["spoken_text"])
+        beat["tts_text"] = ensure_pronounceable(build_tts_text(beat["spoken_text"]), allow_llm=True)
         words, estimated = _synthesize_human(
             beat["spoken_text"],
             source,

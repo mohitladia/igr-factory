@@ -325,7 +325,7 @@ const InterviewHookCard: React.FC<{
                 marginTop: 4,
               }}
             >
-              {topic.toLowerCase().slice(0, 10)}
+              {topic.length <= 10 ? topic.toLowerCase() : (topic.split(/\s+/).slice(-1)[0] || topic).toLowerCase().slice(0, 12)}
             </div>
           </div>
 
@@ -3143,20 +3143,23 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
   const enter = interpolate(frame, [0, 14], [0, 1], clamp);
   const nodes = beat.nodes && beat.nodes.length > 0 ? beat.nodes : [];
   const steps = beat.steps && beat.steps.length > 0 ? beat.steps : [];
+  const palette = [C.gold, C.blue, C.green, C.purple];
+  const safeColor = (c: string | undefined, idx: number) =>
+    c && /^#[0-9A-Fa-f]{6}$/.test(c.trim()) ? c.trim() : palette[idx % palette.length];
   const items =
     nodes.length > 0
       ? nodes.map((n, i) => ({
           tag: `STAGE 0${i + 1}`,
           label: n.label,
           detail: n.detail || 'Core production stage',
-          color: n.color || (i === 0 ? C.gold : i === 1 ? C.blue : C.green),
+          color: safeColor(n.color, i),
         }))
       : steps.length > 0
         ? steps.map((s, i) => ({
             tag: `STEP 0${i + 1}`,
             label: s.label,
             detail: s.detail || 'Sequential execution flow',
-            color: i === 0 ? C.gold : i === 1 ? C.blue : C.green,
+            color: palette[i % palette.length],
           }))
         : [
             {tag: 'STAGE 01', label: `${topic} Input`, detail: 'Incoming request payload', color: C.gold},
@@ -3165,7 +3168,7 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
           ];
 
   const activeStage = Math.min(items.length - 1, Math.floor(frame / 45));
-  const calloutConcept = (beat.accent_words && beat.accent_words[0]) || beat.metric || beat.title || topic;
+  const calloutConcept = beat.metric || beat.title || (beat.accent_words && beat.accent_words[0]) || topic;
 
   return (
     <div

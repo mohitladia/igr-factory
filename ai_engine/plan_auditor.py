@@ -42,16 +42,23 @@ def audit_and_sanitize(plan: dict[str, Any], fix: bool = True) -> dict[str, Any]
     errors: list[str] = []
     warnings: list[str] = []
     removed = 0
+    topic_low = str(plan.get("topic", "")).lower()
+    all_spoken = " ".join(str(b.get("spoken_text", "")) for b in plan.get("beats", [])).lower()
+    active_leak_terms = [
+        t for t in LEAK_TERMS
+        if t not in topic_low and not any(w in topic_low for w in t.split() if len(w) >= 5)
+        and t not in all_spoken
+    ]
 
     for beat in plan.get("beats", []):
         bid = beat.get("id")
         spoken = str(beat.get("spoken_text", "")).lower()
         # Check against this beat only; a number/concept spoken elsewhere does not ground this visual.
-        script_words = _words(spoken)
+        script_words = _words(spoken) | _words(topic_low)
         script_nums = set(_NUM.findall(spoken))
         # 1) metric grounding
         metric = str(beat.get("metric", ""))
-        for term in LEAK_TERMS:
+        for term in active_leak_terms:
             if term in metric.lower() and term not in spoken:
                 warnings.append(f"beat '{bid}': metric '{metric}' mentions '{term}' which is never said; metric cleared")
                 beat["metric"] = "" if fix else beat.get("metric", "")
@@ -75,7 +82,7 @@ def audit_and_sanitize(plan: dict[str, Any], fix: bool = True) -> dict[str, Any]
                         continue
                 text = f"{label_str} {detail_str}"
                 low = text.lower()
-                leaked = [t for t in LEAK_TERMS if t in low and t not in spoken]
+                leaked = [t for t in active_leak_terms if t in low and t not in spoken]
                 bad_nums = [n for n in _NUM.findall(low) if n not in script_nums]
                 content = [w for w in _words(low) if len(w) >= 4 and w not in _STOP]
                 grounded = sum(1 for w in content if w in script_words or any(w.startswith(s[:5]) for s in script_words if len(s) >= 5))

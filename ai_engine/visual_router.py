@@ -60,16 +60,22 @@ def _curated_kind(topic: str, beat: dict[str, Any]) -> str | None:
 def _valid(kind: str, beat: dict[str, Any]) -> bool:
     nodes, steps = beat.get("nodes") or [], beat.get("steps") or []
     if kind == "compare":
-        return len(nodes) == 2 or (
-            len(nodes) >= 2
-            and bool(
+        btype = str(beat.get("type", "")).lower()
+        bid = str(beat.get("id", "")).lower()
+        node_text = " ".join(f"{n.get('label', '')} {n.get('detail', '')}" for n in nodes if isinstance(n, dict))
+        combined = f"{beat.get('title', '')} {beat.get('spoken_text', '')} {node_text}"
+        has_contrast = (
+            btype == "comparison"
+            or bid in {"problem", "problem_or_motivation", "naive_trap", "baseline", "tradeoffs", "complexity", "vertical_limits"}
+            or bool(
                 re.search(
-                    r"\b(vs|versus|naive|brute|slow|bottleneck|overload|without|cost|limit|crash|sort)\b",
-                    f"{beat.get('title', '')} {beat.get('spoken_text', '')}",
+                    r"\b(vs|versus|naive|brute|slow|fail|fails|miss|loss|bottleneck|overload|without|cost|limit|crash|sort|lekin|par)\b",
+                    combined,
                     re.I,
                 )
             )
         )
+        return len(nodes) >= 2 and has_contrast
     if kind == "stages":
         return len(nodes) >= 2 or len(steps) >= 2
     if kind == "scan":
@@ -82,7 +88,7 @@ def _valid(kind: str, beat: dict[str, Any]) -> bool:
 
 def _by_type(beat: dict[str, Any], is_first: bool = False, is_last: bool = False) -> str:
     btype, bid = str(beat.get("type", "")), str(beat.get("id", ""))
-    if is_last or (bid == "summary" and is_last):
+    if is_last and (btype == "summary" or bid in ("summary", "takeaway", "outro")):
         return "summary"
     if is_first and (btype == "kinetic_title" or bid == "hook"):
         return "hook"
