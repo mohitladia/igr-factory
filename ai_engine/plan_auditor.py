@@ -67,7 +67,13 @@ def audit_and_sanitize(plan: dict[str, Any], fix: bool = True) -> dict[str, Any]
         for key in ("nodes", "steps"):
             keep = []
             for i, item in enumerate(beat.get(key) or []):
-                text = f"{item.get('label', '')} {item.get('detail', '')}"
+                label_str = str(item.get("label", "")).strip()
+                detail_str = str(item.get("detail", "")).strip()
+                if key == "steps" and re.fullmatch(r"step\s*\d+", label_str, re.I) and not detail_str:
+                    if fix:
+                        removed += 1
+                        continue
+                text = f"{label_str} {detail_str}"
                 low = text.lower()
                 leaked = [t for t in LEAK_TERMS if t in low and t not in spoken]
                 bad_nums = [n for n in _NUM.findall(low) if n not in script_nums]
