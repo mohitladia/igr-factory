@@ -17,12 +17,25 @@ import {
 type WordTiming = {text: string; start: number; end: number};
 type NodeItem = {label: string; detail?: string; color?: string};
 type StepItem = {label: string; detail?: string};
+type VisualScanRow = {label: string; cells: string[]; badge?: string};
+type VisualScanBucket = {key: string; delta?: string; value?: number | string; status?: string};
+type VisualSpec = {
+  kind: string;
+  data?: {
+    chip?: string;
+    rows?: VisualScanRow[];
+    buckets?: VisualScanBucket[];
+    other_label?: string;
+    banner?: string;
+  };
+};
 type Beat = {
   id: string;
   type: string;
   title: string;
   spoken_text: string;
   visual_action?: string;
+  visual?: VisualSpec;
   duration_frames: number;
   audio_file?: string;
   audio_duration_seconds?: number;
@@ -37,6 +50,7 @@ type Beat = {
 type Plan = {
   title: string;
   topic: string;
+  cta_keyword?: string;
   topic_family?: string;
   teaching_format?: string;
   platform?: 'reel' | 'shorts' | string;
@@ -1002,11 +1016,20 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
   const n1 = beat.nodes && beat.nodes[1];
   const n2 = beat.nodes && beat.nodes[2];
 
+  const extractStat = (text?: string): string | null => {
+    if (!text) return null;
+    const bigO = text.match(/O\([^)]+\)/i);
+    if (bigO) return bigO[0];
+    const pct = text.match(/\b\d+(?:\.\d+)?%/);
+    if (pct) return pct[0];
+    return null;
+  };
+
   const titleText = isScaling
     ? 'Architecture: *Vertical vs Horizontal*'
     : isAnagram
       ? 'Complexity: *Sorting vs 26-Bucket Array*'
-      : isDSA
+      : isDSA && isTwoSumTopic(topic)
         ? 'Complexity: *Brute Force vs HashMap*'
         : `*${beat.title || 'Naive vs Optimized'}*`;
 
@@ -1017,13 +1040,16 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
       : isAnagram
         ? 'NAIVE: SORT STRINGS'
         : 'NAIVE BOTTLENECK';
-  const card1Big = isScaling
-    ? 'SPOF'
-    : isAnagram
-      ? 'O(N log N)'
-      : isDSA
-        ? 'O(n²)'
-        : (n2?.label ? n2.label.toUpperCase().slice(0, 12) : 'CRASH ✕');
+  const card1Big =
+    extractStat(n0?.detail) ||
+    extractStat(n0?.label) ||
+    (isScaling
+      ? 'SPOF'
+      : isAnagram
+        ? 'O(N log N)'
+        : isDSA
+          ? 'O(n²)'
+          : (n2?.label ? n2.label.toUpperCase().slice(0, 12) : 'SLOW ✕'));
   const card1Sub =
     n0?.detail ||
     (isScaling
@@ -1039,13 +1065,17 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
       : isAnagram
         ? 'OPTIMAL: 26 BUCKETS'
         : 'PRODUCTION ENGINE';
-  const card2Big = isScaling
-    ? '99.999%'
-    : isAnagram
-      ? 'O(N)'
-      : isDSA
-        ? 'O(n)'
-        : (beat.metric ? beat.metric.slice(0, 12) : 'SCALABLE ✔');
+  const card2Big =
+    extractStat(n1?.detail) ||
+    extractStat(n1?.label) ||
+    extractStat(beat.metric) ||
+    (isScaling
+      ? '99.999%'
+      : isAnagram
+        ? 'O(N)'
+        : isDSA
+          ? 'O(n)'
+          : (beat.metric ? beat.metric.slice(0, 12) : 'OPTIMAL ✔'));
   const card2Sub =
     n1?.detail ||
     (isScaling
@@ -1053,6 +1083,8 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
       : isAnagram
         ? 'Single pass with 26-size integer array. O(N) time & O(1) space!'
         : 'Low-latency indexing, high throughput & zero bottleneck.');
+  const card1MeterLabel = isDSA ? 'TIME / SPACE: BOTTLENECK ✕' : 'LATENCY / COST: HIGH OVERLOAD ✕';
+  const card2MeterLabel = isDSA ? 'OPTIMAL COMPLEXITY ✔' : 'LOW LATENCY · SCALABLE ✔';
 
   return (
     <div
@@ -1125,7 +1157,7 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
             />
           </div>
           <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.red, marginTop: 10, fontWeight: 700}}>
-            LATENCY / COST: 92% OVERLOAD
+            {card1MeterLabel}
           </div>
         </div>
 
@@ -1184,7 +1216,7 @@ const EditorialComparison: React.FC<{beat: Beat; frame: number; topic?: string}>
             />
           </div>
           <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.green, marginTop: 10, fontWeight: 700}}>
-            LATENCY: 2s INSTANT RESPONSE ✔
+            {card2MeterLabel}
           </div>
         </div>
       </div>
@@ -2515,19 +2547,38 @@ const RAGInteractiveDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, fra
 // ==========================================
 const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame}) => {
   const enter = interpolate(frame, [0, 14], [0, 1], clamp);
-  const scanProgress = interpolate(frame, [10, 80], [0, 7], clamp);
-  const activeCharIdx = Math.min(6, Math.floor(scanProgress));
+  const scanData = beat.visual?.data;
+  const row0 = scanData?.rows && scanData.rows[0];
+  const row1 = scanData?.rows && scanData.rows[1];
 
-  const sChars = ['a', 'n', 'a', 'g', 'r', 'a', 'm'];
-  const tChars = ['n', 'a', 'g', 'a', 'r', 'a', 'm'];
+  const sChars = row0?.cells && row0.cells.length > 0 ? row0.cells : ['a', 'n', 'a', 'g', 'r', 'a', 'm'];
+  const tChars = row1?.cells && row1.cells.length > 0 ? row1.cells : ['n', 'a', 'g', 'a', 'r', 'a', 'm'];
+  const sLabel = row0?.label || 'String s =';
+  const tLabel = row1?.label || 'String t =';
+  const sBadge = row0?.badge || '+1 COUNT';
+  const tBadge = row1?.badge || '-1 COUNT';
+  const topChip = scanData?.chip || 'LEETCODE 242 · 26-BUCKET SCALE';
+  const bannerText = scanData?.banner || 'ALL 26 BUCKETS == 0 → RETURN TRUE ✔';
+  const otherLabel = scanData?.other_label || 'OTHER 21';
 
-  const letterBuckets = [
-    {char: "'a'", sCount: 3, tCount: 3, finalCount: 0},
-    {char: "'g'", sCount: 1, tCount: 1, finalCount: 0},
-    {char: "'m'", sCount: 1, tCount: 1, finalCount: 0},
-    {char: "'n'", sCount: 1, tCount: 1, finalCount: 0},
-    {char: "'r'", sCount: 1, tCount: 1, finalCount: 0},
-  ];
+  const scanProgress = interpolate(frame, [10, 80], [0, Math.max(1, sChars.length)], clamp);
+  const activeCharIdx = Math.min(Math.max(0, sChars.length - 1), Math.floor(scanProgress));
+
+  const letterBuckets =
+    scanData?.buckets && scanData.buckets.length > 0
+      ? scanData.buckets.map((b) => ({
+          char: b.key,
+          delta: b.delta || '+1 -1',
+          finalCount: b.value ?? 0,
+          status: b.status || '✔ ZERO',
+        }))
+      : [
+          {char: "'a'", delta: '+3 -3', finalCount: 0, status: '✔ ZERO'},
+          {char: "'g'", delta: '+1 -1', finalCount: 0, status: '✔ ZERO'},
+          {char: "'m'", delta: '+1 -1', finalCount: 0, status: '✔ ZERO'},
+          {char: "'n'", delta: '+1 -1', finalCount: 0, status: '✔ ZERO'},
+          {char: "'r'", delta: '+1 -1', finalCount: 0, status: '✔ ZERO'},
+        ];
 
   const isDryRun = beat.id === 'dry_run' || beat.id === 'zero_check' || beat.type === 'data_flow';
 
@@ -2559,7 +2610,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
           opacity: enter,
         }}
       >
-        LEETCODE 242 · 26-BUCKET SCALE
+        {topChip}
       </div>
 
       {/* Main Beat Title */}
@@ -2583,7 +2634,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
         }}
       >
         <div style={{fontFamily: FONT_MONO, fontSize: 18, fontWeight: 900, color: C.gold}}>
-          String s =
+          {sLabel}
         </div>
         <div style={{display: 'flex', gap: 10}}>
           {sChars.map((ch, i) => {
@@ -2615,7 +2666,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
           })}
         </div>
         <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.green, fontWeight: 800}}>
-          +1 COUNT
+          {sBadge}
         </div>
       </div>
 
@@ -2635,7 +2686,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
         }}
       >
         <div style={{fontFamily: FONT_MONO, fontSize: 18, fontWeight: 900, color: C.blue}}>
-          String t =
+          {tLabel}
         </div>
         <div style={{display: 'flex', gap: 10}}>
           {tChars.map((ch, i) => {
@@ -2667,7 +2718,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
           })}
         </div>
         <div style={{fontFamily: FONT_MONO, fontSize: 14, color: C.red, fontWeight: 800}}>
-          -1 COUNT
+          {tBadge}
         </div>
       </div>
 
@@ -2730,7 +2781,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
                   {bucket.char}
                 </div>
                 <div style={{fontFamily: FONT_MONO, fontSize: 12, color: C.muted}}>
-                  +{bucket.sCount} -{bucket.tCount}
+                  {bucket.delta}
                 </div>
                 <div
                   style={{
@@ -2751,7 +2802,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
                   {bucket.finalCount}
                 </div>
                 <div style={{fontFamily: FONT_MONO, fontSize: 11, color: C.green, fontWeight: 700}}>
-                  ✔ ZERO
+                  {bucket.status}
                 </div>
               </div>
             );
@@ -2770,7 +2821,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
               gap: 6,
             }}
           >
-            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted}}>OTHER 21</div>
+            <div style={{fontFamily: FONT_MONO, fontSize: 13, color: C.muted}}>{otherLabel}</div>
             <div style={{fontFamily: FONT_MONO, fontSize: 20, fontWeight: 900, color: C.muted}}>0</div>
             <div style={{fontFamily: FONT_MONO, fontSize: 11, color: C.muted}}>UNTOUCHED</div>
           </div>
@@ -2793,7 +2844,7 @@ const DSAAnagramDiagram: React.FC<{beat: Beat; frame: number}> = ({beat, frame})
             ⚖ SCALE VERIFICATION:
           </div>
           <div style={{fontFamily: FONT_MONO, fontSize: 15, fontWeight: 900, color: C.green}}>
-            ALL 26 BUCKETS == 0 → RETURN TRUE ✔
+            {bannerText}
           </div>
         </div>
       </div>
@@ -3277,15 +3328,23 @@ const UniversalTopicDiagram: React.FC<{beat: Beat; topic: string; frame: number}
 // ==========================================
 // 7. Cheat Sheet Outro Card (Benchmark 1:1)
 // ==========================================
-const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; platform?: 'reel' | 'shorts' | string}> = ({
+const CheatsheetOutroCard: React.FC<{
+  topic: string;
+  beat: Beat;
+  frame: number;
+  platform?: 'reel' | 'shorts' | string;
+  ctaKeyword?: string;
+}> = ({
   topic,
   beat,
   frame,
   platform = 'reel',
+  ctaKeyword,
 }) => {
   const enter = interpolate(frame, [0, 14], [0, 1], clamp);
   const buttonPulse = 1 + 0.04 * Math.sin(frame / 10);
   const isShorts = platform === 'shorts';
+  const commentKeyword = (ctaKeyword || topic.toUpperCase().replace(/[^A-Z0-9]+/g, '')).trim();
 
   const isTwoSum = isTwoSumTopic(topic);
   const isAnagram = topic.toLowerCase().includes('anagram');
@@ -3460,7 +3519,7 @@ const CheatsheetOutroCard: React.FC<{topic: string; beat: Beat; frame: number; p
           <>
             <span style={{fontFamily: FONT_SANS, fontSize: 18, color: C.muted}}>Add a comment...</span>
             <span style={{fontFamily: FONT_MONO, fontSize: 19, color: C.white, fontWeight: 800}}>
-              {topic.toUpperCase().replace(/\s+/g, '')}
+              {commentKeyword}
             </span>
           </>
         )}
@@ -3544,9 +3603,53 @@ const BenchmarkCaption: React.FC<{beat: Beat; frame: number; fps: number}> = ({b
 };
 
 // ==========================================
-// Main Visual Beat Router
+// Main Visual Beat Router (Data-Driven First, Legacy Fallback Second)
 // ==========================================
 const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> = ({beat, frame, plan}) => {
+  const kind = beat.visual?.kind;
+
+  // 0. Explicit data-driven routing from ai_engine/visual_router.py
+  if (kind) {
+    switch (kind) {
+      case 'summary':
+        return (
+          <CheatsheetOutroCard
+            topic={plan.topic}
+            beat={beat}
+            frame={frame}
+            platform={plan.platform}
+            ctaKeyword={plan.cta_keyword}
+          />
+        );
+      case 'rag':
+        return <RAGInteractiveDiagram beat={beat} frame={frame} />;
+      case 'hook':
+        return <InterviewHookCard topic={plan.topic} beat={beat} frame={frame} />;
+      case 'compare':
+        return <EditorialComparison beat={beat} frame={frame} topic={plan.topic} />;
+      case 'scan':
+        return <DSAAnagramDiagram beat={beat} frame={frame} />;
+      case 'ring':
+        return <ConsistentHashingDiagram beat={beat} topic={plan.topic} frame={frame} />;
+      case 'gate':
+        return <RateLimitingDiagram beat={beat} topic={plan.topic} frame={frame} />;
+      case 'pool':
+        return <HorizontalScalingDiagram beat={beat} frame={frame} />;
+      case 'array_tape':
+        return <DSAArrayTapeDiagram beat={beat} frame={frame} />;
+      case 'hashmap':
+        return <DSAHashMapDiagram beat={beat} frame={frame} />;
+      case 'partition_lanes':
+        return <PartitionLanesDiagram beat={beat} frame={frame} />;
+      case 'log_stream':
+        return <LogStreamDiagram beat={beat} frame={frame} />;
+      case 'stages':
+      case 'metric':
+      default:
+        return <UniversalTopicDiagram beat={beat} topic={plan.topic} frame={frame} />;
+    }
+  }
+
   const topicLower = plan.topic.toLowerCase();
   const isTwoSum = isTwoSumTopic(plan.topic);
   const isAnagram = topicLower.includes('anagram');
@@ -3558,7 +3661,15 @@ const BenchmarkVisualContent: React.FC<{beat: Beat; frame: number; plan: Plan}> 
 
   // 1. Summary / Outro
   if (beat.type === 'summary' || beat.id === 'summary') {
-    return <CheatsheetOutroCard topic={plan.topic} beat={beat} frame={frame} platform={plan.platform} />;
+    return (
+      <CheatsheetOutroCard
+        topic={plan.topic}
+        beat={beat}
+        frame={frame}
+        platform={plan.platform}
+        ctaKeyword={plan.cta_keyword}
+      />
+    );
   }
 
   // 2. RAG Interactive Motion Graphics Engine (1:1 @backendlore benchmark)

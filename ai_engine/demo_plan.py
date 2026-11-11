@@ -2,6 +2,31 @@ from __future__ import annotations
 from typing import Any
 from ai_engine.topic_classifier import classify_topic
 
+class CuratedPlanMissing(RuntimeError):
+    """Raised when no curated plan exists for a topic and the LLM is unavailable."""
+
+
+ANAGRAM_SCAN = {
+    "kind": "scan",
+    "data": {
+        "chip": "LEETCODE 242 · 26-BUCKET SCALE",
+        "rows": [
+            {"label": "String s =", "cells": list("anagram"), "badge": "+1 COUNT"},
+            {"label": "String t =", "cells": list("nagaram"), "badge": "-1 COUNT"},
+        ],
+        "buckets": [
+            {"key": "'a'", "delta": "+3 -3", "value": "0", "status": "✔ ZERO"},
+            {"key": "'g'", "delta": "+1 -1", "value": "0", "status": "✔ ZERO"},
+            {"key": "'m'", "delta": "+1 -1", "value": "0", "status": "✔ ZERO"},
+            {"key": "'n'", "delta": "+1 -1", "value": "0", "status": "✔ ZERO"},
+            {"key": "'r'", "delta": "+1 -1", "value": "0", "status": "✔ ZERO"},
+        ],
+        "other_label": "OTHER 21",
+        "banner": "ALL 26 BUCKETS == 0 → RETURN TRUE ✔",
+    },
+}
+
+
 def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
     clean = topic.strip() or "Two Sum"
     profile = classify_topic(clean)
@@ -96,46 +121,48 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             tts_text="इंटरव्यू में पूछा: बिना सॉर्टिंग के चेक करो दो स्ट्रिंग्स एनाग्राम हैं या नहीं — नब्बे परसेंट लोग वहीं फ़ेल!",
             visual_action="Two string cards appear with timer ticking and 90% fail alert.",
             accent_words=["Bina sorting", "90% log fail"],
-            metric="LEETCODE 242 · 90% FAIL",
+            metric="90% FAIL",
             nodes=[], connections=[], steps=[]
           ),
           dict(
             id="naive_trap",
             type="comparison",
             title="THE SORTING TRAP",
-            spoken_text="Dono strings ko sort karke compare karna O of n log n time leta hai. Interviewer turant mana kar deta hai!",
+            spoken_text="Sort and compare O of n log n leta hai; frequency buckets one pass mein O of n. Interviewer sorting reject karta hai!",
             tts_text="दोनों स्ट्रिंग्स को सॉर्ट करके कंपेयर करना ओ ऑफ़ एन लॉग एन टाइम लेता है। इंटरव्यूअर तुरंत मना कर देता है!",
             visual_action="Compare slow O(N log N) sorting with single-pass frequency count.",
             accent_words=["O of n log n", "mana kar deta"],
             metric="O(N LOG N) REJECTED",
             nodes=[
-              {"label": "Naive: Sort Both", "detail": "O(N log N) time · Extra memory · REJECTED!", "color": "#FF5555"},
-              {"label": "Optimal: Single Pass", "detail": "O(N) linear time · O(1) space · ACCEPTED!", "color": "#3FB950"}
+              {"label": "Sort and compare", "detail": "O(N log N) time · rejected", "color": "#FF5555"},
+              {"label": "Frequency buckets", "detail": "One pass · O(N) time", "color": "#3FB950"}
             ],
             connections=[], steps=[]
           ),
           dict(
             id="bucket_model",
+            visual=ANAGRAM_SCAN,
             type="architecture_build",
             title="26 BUCKET SCALE",
-            spoken_text="Idea simple hai: 26 letters ke liye ek 26-size integer array banao — yeh hamari balance scale hai!",
+            spoken_text="Idea simple: 26 letters ka fixed-size array banao — first bucket a, middle b to y, last z; space O of 1!",
             tts_text="आइडिया सिंपल है: छब्बीस लेटर्स के लिए एक छब्बीस-साइज़ इंटीजर एरे बनाओ — ये हमारी बैलेंस स्केल है!",
             visual_action="Show 26 frequency bucket slots representing letters a through z.",
             accent_words=["26 letters", "balance scale"],
             metric="26-BUCKET ARRAY · O(1)",
             nodes=[
-              {"label": "Bucket 0 ('a')", "detail": "Index 0: letter count", "color": "#FF9F2A"},
-              {"label": "Bucket 1..24", "detail": "Indices 1 to 24: b to y", "color": "#58A6FF"},
-              {"label": "Bucket 25 ('z')", "detail": "Index 25: letter count", "color": "#3FB950"}
+              {"label": "First: 'a'", "detail": "First bucket stores letter a", "color": "#FF9F2A"},
+              {"label": "Middle: b to y", "detail": "Buckets store the middle letters", "color": "#58A6FF"},
+              {"label": "Last: 'z'", "detail": "Last bucket stores letter z", "color": "#3FB950"}
             ],
             connections=[[0, 1], [1, 2]],
             steps=[]
           ),
           dict(
             id="dry_run",
+            visual=ANAGRAM_SCAN,
             type="data_flow",
             title="INCREMENT & DECREMENT",
-            spoken_text="String s ka character aate hi bucket mein plus 1 karo, aur String t ka character aate hi minus 1 karo!",
+            spoken_text="String s scan karo: har character bucket mein plus one; String t scan karo: minus one. Same letters perfect cancellation dete hain!",
             tts_text="स्ट्रिंग एस का कैरेक्टर आते ही बकेट में प्लस वन करो, और स्ट्रिंग टी का कैरेक्टर आते ही माइनस वन करो!",
             visual_action="Animate string s incrementing counts and string t decrementing counts.",
             accent_words=["plus 1 karo", "minus 1 karo"],
@@ -149,16 +176,17 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
           ),
           dict(
             id="zero_check",
+            visual=ANAGRAM_SCAN,
             type="concept_visual",
             title="ALL BUCKETS ZERO",
-            spoken_text="Agar dono strings sach mein anagram hain, toh 26 ke 26 buckets ZERO milenge! Ek bhi non-zero bacha toh false!",
+            spoken_text="Agar dono strings sach mein anagram hain, return true: 26 buckets zero! Ek bhi non-zero count bacha toh return false!",
             tts_text="अगर दोनों स्ट्रिंग्स सच में एनाग्राम हैं, तो छब्बीस के छब्बीस बकेट्स ज़ीरो मिलेंगे! एक भी नॉन-ज़ीरो बचा तो फ़ाल्स!",
             visual_action="All 26 buckets resolve to 0 with a bright green verification badge.",
             accent_words=["ZERO milenge", "non-zero bacha"],
             metric="ALL COUNTS == 0",
             nodes=[
-              {"label": "Bucket State == 0", "detail": "Every character cancelled out -> TRUE", "color": "#3FB950"},
-              {"label": "Bucket State != 0", "detail": "Count mismatch detected -> FALSE", "color": "#FF5555"}
+              {"label": "All buckets zero", "detail": "Every character cancelled -> return true", "color": "#3FB950"},
+              {"label": "Any non-zero count", "detail": "Mismatch -> return false", "color": "#FF5555"}
             ],
             connections=[], steps=[]
           ),
@@ -172,8 +200,8 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             accent_words=["O of n time", "space O of 1"],
             metric="O(N) TIME · O(1) SPACE",
             nodes=[
-              {"label": "Time Complexity", "detail": "O(N) single pass through strings"},
-              {"label": "Space Complexity", "detail": "O(1) constant fixed 26 buckets"}
+              {"label": "Time: O(N)", "detail": "O(N) in one loop"},
+              {"label": "Space: O(1)", "detail": "Fixed 26 integers"}
             ],
             connections=[], steps=[]
           ),
@@ -181,15 +209,15 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             id="summary",
             type="summary",
             title="ANAGRAM CHEATSHEET",
-            spoken_text="Yaad rakho: Sorting nahi, 26 frequency buckets! Comment ANAGRAM karo, aur save kar lo — interview mein kaam aayega!",
+            spoken_text="Lengths match hone chahiye; sorting nahi, 26 frequency buckets! All counts zero means true. Comment ANAGRAM karo, save kar lo!",
             tts_text="याद रखो: सॉर्टिंग नहीं, छब्बीस फ्रीक्वेंसी बकेट्स! कमेंट एनाग्राम करो, और सेव कर लो — इंटरव्यू में काम आएगा!",
             visual_action="Show PDF cheat sheet card and DM automation CTA.",
             accent_words=["frequency buckets", "Comment ANAGRAM"],
             metric="COMMENT ANAGRAM",
             nodes=[
-              {"label": "Length Check", "detail": "len(s) != len(t) -> return false"},
-              {"label": "26 Buckets", "detail": "+1 on s[i], -1 on t[i]"},
-              {"label": "Verify All 0", "detail": "Return all(count == 0)"}
+              {"label": "Lengths match", "detail": "Lengths must match"},
+              {"label": "26 frequency buckets", "detail": "Track counts for each letter"},
+              {"label": "All counts zero", "detail": "Matching counts mean true"}
             ],
             connections=[[0, 1], [1, 2]]
           )
@@ -556,80 +584,10 @@ def build_demo_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
           )
         ]
     else:
-        slug_tag = clean.upper().replace(" ", "")[:14]
-        beats = [
-          dict(
-            id="hook",
-            type="kinetic_title",
-            title=clean.upper()[:32],
-            spoken_text=f"Interview mein {clean} pucha jaye toh standard ratta answer mat dena! Aaj iska real production architecture samajhte hain.",
-            visual_action="Cinematic reveal of the requested topic.",
-            accent_words=[clean, "production architecture"],
-            metric=f"{clean.upper()[:18]} ARCHITECTURE",
-            nodes=[], connections=[], steps=[]
-          ),
-          dict(
-            id="problem",
-            type="comparison",
-            title="NAIVE vs PRODUCTION",
-            spoken_text=f"Bina {clean} ke high traffic par system bottleneck ho jata hai aur latency spike karti hai. Dekho dono mein farak!",
-            visual_action="Compare naive bottleneck against optimized architecture.",
-            accent_words=["bottleneck", "latency spike"],
-            nodes=[{"label": f"Without {clean[:18]}", "detail": "High latency & bottleneck"}, {"label": f"With {clean[:18]}", "detail": "Scalable & fault-tolerant"}],
-            connections=[], steps=[]
-          ),
-          dict(
-            id="architecture",
-            type="architecture_build",
-            title=f"{clean.upper()[:20]} CORE ENGINE",
-            spoken_text=f"{clean} teen core layers mein kaam karta hai: Request Ingestion, Core Processing Engine, aur Fast State Layer.",
-            visual_action="Build the core architecture components step by step.",
-            accent_words=[clean, "Core Processing"],
-            metric="LOW LATENCY",
-            nodes=[
-              {"label": "Ingestion Layer", "detail": f"Incoming {clean[:15]} requests", "color": "#FF9F2A"},
-              {"label": f"{clean[:22]} Engine", "detail": "Core orchestration & routing", "color": "#58A6FF"},
-              {"label": "State & Storage", "detail": "Fast in-memory / persistent store", "color": "#3FB950"}
-            ],
-            connections=[[0, 1], [1, 2]],
-            steps=[]
-          ),
-          dict(
-            id="flow",
-            type="data_flow",
-            title="STEP-BY-STEP FLOW",
-            spoken_text=f"Data flow dekho: Request aati hai, {clean} engine usko validate aur process karta hai, aur milliseconds mein response deta hai!",
-            visual_action="Animate the topic-specific process from input to output.",
-            accent_words=["validate", "milliseconds"],
-            metric="< 5MS LATENCY",
-            steps=[
-              {"label": "1. Request Arrives", "detail": f"Client hits {clean[:18]} layer"},
-              {"label": "2. Core Execution", "detail": "Fast lookup & policy check"},
-              {"label": "3. Fast Response", "detail": "Guaranteed high-throughput output"}
-            ],
-            nodes=[], connections=[]
-          ),
-          dict(
-            id="tradeoffs",
-            type="comparison",
-            title="REAL TRADE-OFFS",
-            spoken_text=f"Interview tip: {clean} se speed aur scale toh milti hai, par extra memory aur consistency tradeoff bhi handle karna padta hai!",
-            visual_action="Compare benefits and limitations.",
-            accent_words=["speed aur scale", "tradeoff"],
-            nodes=[{"label": "High Throughput", "detail": "10x faster scale & resilience"}, {"label": "Trade-off", "detail": "Operational & state complexity"}],
-            connections=[], steps=[]
-          ),
-          dict(
-            id="summary",
-            type="summary",
-            title="INTERVIEW TAKEAWAY",
-            spoken_text=f"Yaad rakho: {clean} ko problem, data flow aur tradeoffs ke saath explain karo! Comment {slug_tag} for complete PDF interview notes!",
-            visual_action="Reveal concise topic takeaway with CTA.",
-            accent_words=[clean, slug_tag],
-            nodes=[{"label": "Problem", "detail": "Eliminate bottleneck"}, {"label": clean[:20], "detail": "Core processing engine"}, {"label": "Trade-off", "detail": "Scale vs complexity"}],
-            connections=[[0, 1], [1, 2]]
-          )
-        ]
+        raise CuratedPlanMissing(
+            f"No hand-written plan exists for '{clean}'. Generic boilerplate is intentionally NOT generated; "
+            "the LLM plan generator must be reachable (check OPENAI_API_KEY / network)."
+        )
     return {"title": f"{clean}: explained", "topic": clean, "topic_family": profile.family,
             "teaching_format": profile.format_name, "language":"hinglish",
             "target_duration_seconds":duration_seconds,"beats":beats}

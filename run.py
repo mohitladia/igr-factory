@@ -12,8 +12,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from ai_engine.critic import evaluate_plan_quality
+from ai_engine.cta import plan_keyword
+from ai_engine.plan_auditor import audit_and_sanitize
+from ai_engine.visual_router import assign_visuals
 from ai_engine.demo_plan import build_demo_plan
-from ai_engine.plan_generator import generate_plan, validate_and_normalize
+from ai_engine.plan_generator import TopicAlignmentError, generate_plan, validate_and_normalize
 from ai_engine.post_inspector import inspect_and_optimize_video
 from audio_engine.sfx_generator import ensure_sfx_assets
 from audio_engine.voice_generator import generate_beat_audio
@@ -105,13 +108,17 @@ def main() -> int:
 
     try:
         print("\n[1/5] Generating story and visual beats...")
+        plan_source = "llm"
         if args.demo:
+            plan_source = "curated"
             raw_plan = build_demo_plan(topic, duration)
             plan = validate_and_normalize(raw_plan, topic)
         else:
             try:
                 raw_plan = generate_plan(topic, duration)
                 plan = validate_and_normalize(raw_plan, topic)
+            except TopicAlignmentError:
+                raise
             except Exception as llm_exc:
                 if not args.allow_demo_fallback:
                     raise RuntimeError(
@@ -119,6 +126,7 @@ def main() -> int:
                         "Use --demo for a sample plan, or explicitly pass --allow-demo-fallback."
                     ) from llm_exc
                 print(f"[plan-fallback] AI plan failed ({llm_exc}); explicit fallback enabled, using the demo storyboard.")
+                plan_source = "curated"
                 plan = validate_and_normalize(build_demo_plan(topic, duration), topic)
         print(f"[topic-lock] family={plan.get('topic_family')} format={plan.get('teaching_format')}")
         print(f"[topic-lock] validated exact topic: {plan['topic']}")
@@ -131,12 +139,25 @@ def main() -> int:
                 print(f"[critic-tip] {tip}")
         if not report.passed and not args.demo and args.allow_demo_fallback:
             print("[critic-fallback] LLM storyboard did not pass quality gate; upgrading to verified high-retention storyboard.")
+            plan_source = "curated"
             raw_plan = build_demo_plan(topic, duration)
             plan = validate_and_normalize(raw_plan, topic)
             report = evaluate_plan_quality(plan)
             print(f"[critic] Fallback Story Quality Score: {report.score}/10")
         if not report.passed:
             raise RuntimeError(f"Story quality check failed ({report.score}/10): {'; '.join(report.feedback)}")
+
+        # Narration <-> visual consistency: drop anything on screen the narrator never says, then pick
+        # a validated visual template per beat (no more topic guessing inside the renderer).
+        audit = audit_and_sanitize(plan, fix=(plan_source != "curated"))
+        for msg in audit["errors"]:
+            print(f"[audit-fix] {msg}")
+        for msg in audit["warnings"]:
+            print(f"[audit-warn] {msg}")
+        assign_visuals(plan, plan_source)
+        for msg in plan.get("visual_notes", []):
+            print(f"[visual-router] {msg}")
+        print("[visual-router] " + " | ".join(f"{b['id']}={b['visual']['kind']}" for b in plan["beats"]))
 
         if args.script_only:
             print("\n" + "=" * 64)
@@ -247,7 +268,7 @@ def main() -> int:
                 print(f"[youtube-uploaded] URL: {yt_info.get('url')}")
 
         if args.auto_dm and not args.plan_only:
-            kw = "".join(ch for ch in topic if ch.isalnum()).upper()[:12] or "NOTES"
+            kw = plan_keyword(plan, topic)
             dm_url = str(plan.get("cheatsheet_url") or "").strip()
             if not dm_url:
                 raise RuntimeError("Auto-DM needs a public PDF link; configure CHEATSHEET_DEFAULT_URL or opt in to public Catbox uploads.")

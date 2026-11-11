@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from ai_engine.cta import plan_keyword
+
 def _graph_api_base(instagram_login: bool = False) -> str:
     version = os.getenv("META_GRAPH_API_VERSION", "v27.0").strip()
     if not version or "/" in version:
@@ -66,7 +68,7 @@ def build_instagram_caption(plan: dict[str, Any]) -> str:
     topic = plan.get("topic", "System Design")
     beats = plan.get("beats", [])
     hook_text = beats[0].get("spoken_text", "") if beats else f"{topic} Explained!"
-    keyword = "".join(ch for ch in topic if ch.isalnum()).upper()[:12] or "NOTES"
+    keyword = plan_keyword(plan, topic)
     slug_tag = keyword.lower()
 
     bullet_lines = []
@@ -103,7 +105,7 @@ def build_instagram_caption(plan: dict[str, Any]) -> str:
 
 def write_instagram_metadata(plan: dict[str, Any], destination: Path) -> str:
     topic = plan.get("topic", "System Design")
-    keyword = "".join(ch for ch in topic if ch.isalnum()).upper()[:12] or "NOTES"
+    keyword = plan_keyword(plan, topic)
     caption = build_instagram_caption(plan)
     dm_status = "Enabled for this run" if plan.get("auto_dm_enabled") and plan.get("cheatsheet_url") else "Disabled (manual CTA only)"
     content = (
@@ -151,7 +153,7 @@ def write_youtube_shorts_metadata(
         "system_design": "#systemdesign",
         "general_technical": "#technology",
     }.get(family, "#technology")
-    title = f"{topic[:60]} Explained in Hinglish {title_tag} #Shorts"[:100]
+    title = f"{topic[:60]} Explained in Hinglish {title_tag} #shorts"[:100]
     description = (
         f"{pdf_banner}"
         f"{hook_text}\n\n"

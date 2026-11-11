@@ -275,7 +275,7 @@ def ensure_pronounceable(text: str) -> str:
     if not has_devanagari_input:
         return out
     leftovers = _leftover_latin_words(out)
-    if leftovers:
+    if leftovers and os.getenv("TTS_AUTO_LEARN", "0") == "1":
         learned = _llm_transliterate(leftovers)
         if learned:
             path = Path(__file__).with_name("pronunciations.json")
@@ -292,60 +292,179 @@ def ensure_pronounceable(text: str) -> str:
         leftovers = _leftover_latin_words(out)
     if leftovers:
         msg = f"English words would be mispronounced by the Hindi voice: {', '.join(leftovers)}. Add them to audio_engine/pronunciations.json"
-        if os.getenv("PRONUNCIATION_STRICT", "1") == "1":
+        if os.getenv("PRONUNCIATION_STRICT", "0") == "1":
             raise RuntimeError(f"[pronunciation-gate] {msg}")
-        print(f"    [pronunciation-warn] {msg}")
+        pass  # Latin leftovers are tolerated; the STT verifier decides whether the take is acceptable
     else:
         print("    [pronunciation] OK: 100% Devanagari phonetic script sent to TTS")
     return out
 
 
-def _try_sarvam_tts(tts_script: str, caption_text: str, output_path: Path) -> tuple[list[dict[str, Any]], float] | None:
-    """Attempt synthesis via Sarvam AI Bulbul v2/v3 Indian Hinglish TTS API (https://api.sarvam.ai/text-to-speech)."""
+def _split_for_tts(script: str, limit: int = 450) -> list[str]:
+    """Split on sentence boundaries so no clip exceeds the API limit (old code silently cut at 500 chars)."""
+    if len(script) <= limit:
+        return [script]
+    sentences = re.split(r"(?<=[।.!?])\s+", script)
+    chunks: list[str] = []
+    cur = ""
+    for s in sentences:
+        if cur and len(cur) + len(s) + 1 > limit:
+            chunks.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _sarvam_request(script: str, pace: float) -> bytes | None:
     import base64
     import os
     import requests
 
+    resp = requests.post(
+        "https://api.sarvam.ai/text-to-speech",
+        headers={"api-subscription-key": os.getenv("SARVAM_API_KEY", "").strip(), "Content-Type": "application/json"},
+        json={
+            "inputs": [script],
+            "target_language_code": "hi-IN",
+            "speaker": os.getenv("SARVAM_VOICE", "shubh").strip().lower() or "shubh",
+            "model": os.getenv("SARVAM_MODEL", "bulbul:v3").strip() or "bulbul:v3",
+            "pace": pace,
+            "enable_preprocessing": os.getenv("SARVAM_PREPROCESS", "1") == "1",
+        },
+        timeout=(5.0, 60.0),
+    )
+    if resp.status_code == 200:
+        audios = resp.json().get("audios", [])
+        if audios:
+            return base64.b64decode(audios[0])
+    print(f"    [SarvamAI] HTTP {resp.status_code}: {resp.text[:160]}")
+    return None
+
+
+def _sarvam_synthesize_wav(script: str, pace: float, work: Path) -> bytes | None:
+    """Synthesize the whole script (possibly in chunks) and return one WAV."""
+    chunks = _split_for_tts(script)
+    blobs = [_sarvam_request(c, pace) for c in chunks]
+    if any(b is None for b in blobs):
+        return None
+    if len(blobs) == 1:
+        return blobs[0]
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    import subprocess
+
+    parts = []
+    for i, blob in enumerate(blobs):
+        p = work.with_name(f"{work.stem}_chunk{i}.wav")
+        p.write_bytes(blob)  # type: ignore[arg-type]
+        parts.append(p)
+    lst = work.with_name(f"{work.stem}_chunks.txt")
+    lst.write_text("\n".join(f"file '{p.as_posix()}'" for p in parts), encoding="utf-8")
+    merged = work.with_name(f"{work.stem}_merged.wav")
+    subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(merged)],
+                   capture_output=True, check=False)
+    data = merged.read_bytes() if merged.exists() else None
+    for p in [*parts, lst, merged]:
+        p.unlink(missing_ok=True)
+    return data
+
+
+def _sarvam_wav_to_mp3(wav_bytes: bytes, output_path: Path) -> bool:
+    """Convert Sarvam WAV output to the MP3 format used by the renderer's audio paths."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        print("    [SarvamAI] ffmpeg is required to convert WAV output to the renderer's MP3 format")
+        return False
+    import subprocess
+
+    wav_path = output_path.with_name(f"{output_path.stem}.sarvam-tmp.wav")
+    mp3_path = output_path.with_name(f"{output_path.stem}.sarvam-tmp.mp3")
+    try:
+        wav_path.write_bytes(wav_bytes)
+        result = subprocess.run(
+            [ffmpeg, "-y", "-v", "error", "-i", str(wav_path), "-codec:a", "libmp3lame", "-q:a", "3", str(mp3_path)],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0 or not mp3_path.exists() or mp3_path.stat().st_size < 100:
+            detail = result.stderr.decode("utf-8", errors="replace")[-240:]
+            print(f"    [SarvamAI] WAV-to-MP3 conversion failed: {detail}")
+            return False
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        mp3_path.replace(output_path)
+        return True
+    except OSError as exc:
+        print(f"    [SarvamAI] WAV-to-MP3 conversion failed: {exc}")
+        return False
+    finally:
+        wav_path.unlink(missing_ok=True)
+        mp3_path.unlink(missing_ok=True)
+
+
+AUDIO_CHECKS: dict[str, dict[str, Any]] = {}
+VERIFY_PASS = 0.85
+VERIFY_FLOOR = 0.60
+
+
+def _try_sarvam_tts(tts_script: str, caption_text: str, output_path: Path) -> tuple[list[dict[str, Any]], float] | None:
+    """Sarvam synthesis with objective QA: transcribe the take, score it, retry at other paces, keep the best."""
+    import os
+
     provider = os.getenv("TTS_PROVIDER", "auto").strip().lower()
-    api_key = os.getenv("SARVAM_API_KEY", "").strip()
-    if provider in ("edge", "voicestudio", "elevenlabs") or not api_key:
+    if provider in ("edge", "voicestudio", "elevenlabs") or not os.getenv("SARVAM_API_KEY", "").strip():
         return None
 
-    tts_script = ensure_pronounceable(tts_script)
-    speaker = os.getenv("SARVAM_VOICE", "shubh").strip().lower() or "shubh"
-    model = os.getenv("SARVAM_MODEL", "bulbul:v3").strip() or "bulbul:v3"
-    pace = float(os.getenv("SARVAM_PACE", "1.02"))
+    from audio_engine.audio_verifier import verify_clip
+
+    script = ensure_pronounceable(tts_script)
+    base_pace = float(os.getenv("SARVAM_PACE", "1.0"))
+    paces = list(dict.fromkeys([base_pace, 1.0, 0.94, 0.88]))
+    verify = os.getenv("VERIFY_AUDIO", "1") == "1"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    best_bytes: bytes | None = None
+    best: dict[str, Any] = {"score": -1.0}
+    attempts: list[dict[str, Any]] = []
     try:
-        resp = requests.post(
-            "https://api.sarvam.ai/text-to-speech",
-            headers={
-                "api-subscription-key": api_key,
-                "Content-Type": "application/json",
-            },
-            json={
-                "inputs": [tts_script[:500]],
-                "target_language_code": "hi-IN",
-                "speaker": speaker,
-                "model": model,
-                "pace": pace,
-                "enable_preprocessing": False,
-            },
-            timeout=(5.0, 60.0),
-        )
-        if resp.status_code == 200:
-            audios = resp.json().get("audios", [])
-            if audios:
-                wav_bytes = base64.b64decode(audios[0])
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_bytes(wav_bytes)
-                dur = _probe_duration(output_path)
-                words = _align_words_whisper_or_proportional(caption_text, output_path, dur)
-                print(f"    [SarvamAI] Synthesized ({model}/{speaker}) -> {dur:.2f}s")
-                return words, dur
-        print(f"    [SarvamAI] HTTP {resp.status_code}: {resp.text[:160]}")
+        for pace in paces:
+            wav_bytes = _sarvam_synthesize_wav(script, pace, output_path)
+            if wav_bytes is None:
+                continue
+            if not _sarvam_wav_to_mp3(wav_bytes, output_path):
+                return None
+            check = verify_clip(output_path, script) if verify else None
+            if check is None:
+                best_bytes, best = output_path.read_bytes(), {"score": None, "transcript": None, "pace": pace}
+                attempts.append({"pace": pace, "score": None})
+                break
+            attempts.append({"pace": pace, "score": check["score"]})
+            if best_bytes is None or check["score"] > (best["score"] or -1):
+                best_bytes, best = output_path.read_bytes(), {**check, "pace": pace}
+            if check["score"] >= VERIFY_PASS:
+                break
+            print(f"    [audio-verify] take @pace {pace}: score {check['score']} < {VERIFY_PASS}; retrying")
     except Exception as exc:
         print(f"    [SarvamAI] Error: {exc}")
-    return None
+    if best_bytes is None:
+        return None
+
+    output_path.write_bytes(best_bytes)
+    score = best.get("score")
+    AUDIO_CHECKS[output_path.name] = {"expected": script, "attempts": attempts, **best}
+    if score is not None and score < VERIFY_FLOOR and os.getenv("VERIFY_AUDIO_STRICT", "1") == "1":
+        raise RuntimeError(
+            f"[audio-verify] {output_path.name} still mispronounced after {len(attempts)} takes "
+            f"(best score {score}). Expected: {script!r} | Heard: {best.get('transcript')!r}"
+        )
+    dur = _probe_duration(output_path)
+    words = _align_words_whisper_or_proportional(caption_text, output_path, dur)
+    tag = "unverified" if score is None else f"verified {score}"
+    print(f"    [SarvamAI] Synthesized -> {dur:.2f}s ({tag}, pace {best.get('pace')})")
+    return words, dur
 
 
 def _try_voicestudio(text: str, output_path: Path) -> tuple[list[dict[str, Any]], float] | None:
@@ -537,10 +656,14 @@ def generate_beat_audio(plan: dict[str, Any], root: Path, run_dir: Path, voice: 
         old.unlink(missing_ok=True)
 
     beats = plan["beats"]
+    from audio_engine.tts_text import build_tts_text
+
     for index, beat in enumerate(beats, start=1):
         beat_id = _safe_id(beat["id"])
         filename = f"{index:02d}_{beat_id}.mp3"
         source = audio_dir / filename
+        # Single source of truth: the voice script is ALWAYS derived from the caption narration.
+        beat["tts_text"] = build_tts_text(beat["spoken_text"])
         words, estimated = _synthesize_human(
             beat["spoken_text"],
             source,
@@ -550,6 +673,7 @@ def generate_beat_audio(plan: dict[str, Any], root: Path, run_dir: Path, voice: 
             index,
             tts_text=beat.get("tts_text"),
         )
+        beat["audio_check"] = AUDIO_CHECKS.get(filename)
         public_file = public_audio_dir / filename
         shutil.copy2(source, public_file)
         duration = _probe_duration(source)
@@ -574,6 +698,11 @@ def generate_beat_audio(plan: dict[str, Any], root: Path, run_dir: Path, voice: 
     plan.setdefault("height", 1920)
     plan["total_duration_frames"] = sum(int(b["duration_frames"]) for b in beats)
     plan["duration_seconds"] = round(plan["total_duration_frames"] / fps, 2)
+    import json as _json
+
+    report = [{"beat": b["id"], "narration": b["spoken_text"], "voice_script": b["tts_text"],
+               "check": b.get("audio_check")} for b in beats]
+    (run_dir / "audio_report.json").write_text(_json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return plan
 
 

@@ -17,10 +17,11 @@ class TopicClassifierTests(unittest.TestCase):
         self.assertTrue(any("HashMap" in (b.get("title", "") + b.get("spoken_text", "")) for b in plan["beats"]))
         self.assertFalse(any("Kafka" in b.get("spoken_text", "") for b in plan["beats"]))
 
-    def test_kafka_demo_is_topic_locked(self):
-        plan = build_demo_plan("Apache Kafka")
-        self.assertEqual(plan["topic"], "Apache Kafka")
-        self.assertEqual(plan["topic_family"], "distributed_messaging")
+    def test_kafka_is_classified_without_fabricating_demo_content(self):
+        from ai_engine.demo_plan import CuratedPlanMissing
+        self.assertEqual(classify_topic("Apache Kafka").family, "distributed_messaging")
+        with self.assertRaises(CuratedPlanMissing):
+            build_demo_plan("Apache Kafka")
 
     def test_topic_mismatch_is_rejected(self):
         plan = build_demo_plan("Two Sum")

@@ -20,7 +20,7 @@ class SocialPublisherTests(unittest.TestCase):
             caption = write_instagram_metadata(plan, dest)
             self.assertTrue(dest.exists())
             text = dest.read_text(encoding="utf-8")
-            self.assertIn("CONSISTENTHA", text)
+            self.assertIn("HASHING", text)
             self.assertIn("#systemdesign", caption)
 
     def test_youtube_shorts_metadata_generation(self) -> None:

@@ -26,6 +26,8 @@ PORT = int(os.getenv("STUDIO_PORT", "8088"))
 
 _active_process: subprocess.Popen | None = None
 _process_logs: list[str] = []
+_worker_lock = threading.Lock()
+_worker_active = False
 
 
 def _extract_frames_for_video(video_path: Path, output_dir: Path) -> list[str]:
@@ -104,6 +106,8 @@ def get_all_runs() -> list[dict]:
 
 
 def get_run_details(run_id: str) -> dict | None:
+    if not run_id or run_id in {".", ".."} or "/" in run_id or "\\" in run_id:
+        return None
     run_dir = OUTPUT_RUNS / run_id
     if not run_dir.exists():
         return None
@@ -147,13 +151,28 @@ def get_run_details(run_id: str) -> dict | None:
 
 class StudioHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         super().end_headers()
 
+    def _origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True  # Local CLI/API clients do not send Origin.
+        return origin.rstrip("/") in {
+            f"http://127.0.0.1:{PORT}",
+            f"http://localhost:{PORT}",
+        }
+
     def do_OPTIONS(self):
+        if not self._origin_allowed():
+            self.send_error(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed")
+            return
         self.send_response(HTTPStatus.NO_CONTENT)
+        origin = self.headers.get("Origin")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Vary", "Origin")
         self.end_headers()
 
     def do_GET(self):
@@ -186,15 +205,33 @@ class StudioHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        if not self._origin_allowed():
+            self.send_error(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed")
+            return
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self.send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Expected application/json")
+            return
         parsed = urlparse(self.path)
         path = parsed.path
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
+            return
+        if length < 0 or length > 65_536:
+            self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body is too large")
+            return
         body = self.rfile.read(length) if length > 0 else b"{}"
 
         try:
             data = json.loads(body.decode("utf-8")) if body else {}
         except Exception:
-            data = {}
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON body")
+            return
+        if not isinstance(data, dict):
+            self.send_error(HTTPStatus.BAD_REQUEST, "JSON body must be an object")
+            return
 
         if path == "/api/generate":
             topic = str(data.get("topic", "")).strip()
@@ -203,10 +240,23 @@ class StudioHandler(SimpleHTTPRequestHandler):
             if not topic:
                 self.send_json({"error": "Topic is required"}, status=400)
                 return
+            if len(topic) > 200:
+                self.send_json({"error": "Topic must be 200 characters or fewer"}, status=400)
+                return
+            if platform not in {"reel", "shorts", "both"}:
+                self.send_json({"error": "Platform must be reel, shorts, or both"}, status=400)
+                return
+
+            global _worker_active, _process_logs
+            with _worker_lock:
+                if _worker_active:
+                    self.send_json({"error": "A generation job is already running"}, status=409)
+                    return
+                _worker_active = True
+                _process_logs.clear()
 
             def _run_worker():
-                global _active_process, _process_logs
-                _process_logs.clear()
+                global _active_process, _worker_active
                 cmd = [sys.executable, str(ROOT / "run.py"), "--topic", topic, "--platform", platform]
                 if script_only:
                     cmd.append("--script-only")
@@ -223,8 +273,18 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     _process_logs.append(f"[studio] Finished with exit code {proc.returncode}")
                 except Exception as exc:
                     _process_logs.append(f"[studio-error] {exc}")
+                finally:
+                    with _worker_lock:
+                        _active_process = None
+                        _worker_active = False
 
-            threading.Thread(target=_run_worker, daemon=True).start()
+            try:
+                threading.Thread(target=_run_worker, daemon=True).start()
+            except Exception as exc:
+                with _worker_lock:
+                    _worker_active = False
+                self.send_json({"error": f"Could not start generation job: {exc}"}, status=500)
+                return
             self.send_json({"status": "started", "topic": topic})
             return
 
@@ -557,6 +617,12 @@ class StudioHandler(SimpleHTTPRequestHandler):
     let currentRunId = null;
     let logTimer = null;
 
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[char]);
+    }
+
     async function loadRuns() {
       const res = await fetch('/api/runs');
       const data = await res.json();
@@ -570,8 +636,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
         const item = document.createElement('div');
         item.className = 'run-item' + (idx === 0 ? ' active' : '');
         item.innerHTML = `
-          <div class="run-title">${r.topic}</div>
-          <div class="run-meta">${r.id} · ${r.beats_count} beats · ${r.has_video ? '🎬 Rendered' : '📝 Plan'}</div>
+          <div class="run-title">${escapeHtml(r.topic)}</div>
+          <div class="run-meta">${escapeHtml(r.id)} · ${escapeHtml(r.beats_count)} beats · ${r.has_video ? '🎬 Rendered' : '📝 Plan'}</div>
         `;
         item.onclick = () => selectRun(r.id, item);
         list.appendChild(item);
@@ -603,7 +669,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
       if (data.frame_stills && data.frame_stills.length) {
         framesHtml = data.frame_stills.map((src, i) => `
           <div class="frame-card">
-            <img src="${src}" alt="Frame ${i+1}" />
+            <img src="${escapeHtml(src)}" alt="Frame ${i+1}" />
             <div class="frame-label">Checkpoint 0${i+1}</div>
           </div>
         `).join('');
@@ -611,25 +677,36 @@ class StudioHandler(SimpleHTTPRequestHandler):
         framesHtml = '<div style="color:var(--muted); font-size:13px; grid-column:span 3;">No extracted frame stills available yet.</div>';
       }
 
-      let beatsHtml = beats.map((b, i) => `
+      let beatsHtml = beats.map((b, i) => {
+        const vKind = (b.visual && b.visual.kind) ? b.visual.kind : b.type;
+        const ac = b.audio_check;
+        const acBadge = ac
+          ? `<span style="color:${ac.passed ? 'var(--green)' : '#FF6B6B'}; font-weight:700;">${ac.passed ? '✔' : '⚠'} STT ${Math.round((ac.score || 0) * 100)}%</span>`
+          : '';
+        const sttLine = (ac && ac.transcript)
+          ? `<div class="beat-tts" style="margin-top:6px; color:var(--muted);"><strong>STT Heard:</strong> ${escapeHtml(ac.transcript)}</div>`
+          : '';
+        return `
         <div class="beat-card">
           <div class="beat-header">
-            <span style="color:var(--gold); font-weight:800;">BEAT 0${i+1} · ${b.id.toUpperCase()}</span>
-            <span style="color:var(--blue);">${b.type} · ${b.duration_frames || 0} frames</span>
+            <span style="color:var(--gold); font-weight:800;">BEAT 0${i+1} · ${escapeHtml(b.id).toUpperCase()}</span>
+            <span style="color:var(--blue);">visual: ${escapeHtml(vKind)} · ${escapeHtml(b.duration_frames || 0)} frames ${acBadge ? ' · ' + acBadge : ''}</span>
           </div>
-          <div class="beat-spoken"><strong>Narration:</strong> "${b.spoken_text}"</div>
-          <div class="beat-tts"><strong>Devanagari TTS:</strong> ${b.tts_text || '—'}</div>
+          <div class="beat-spoken"><strong>Narration:</strong> "${escapeHtml(b.spoken_text)}"</div>
+          <div class="beat-tts"><strong>Devanagari TTS:</strong> ${escapeHtml(b.tts_text || '—')}</div>
+          ${sttLine}
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       container.innerHTML = `
         <div class="preview-grid">
           <div>
             ${videoSrc ? `
-              <video src="${videoSrc}" controls></video>
+              <video src="${escapeHtml(videoSrc)}" controls></video>
               <div style="margin-top:16px; display:flex; gap:10px;">
-                <a href="${videoSrc}" download class="btn btn-outline" style="flex:1; justify-content:center;">Download MP4</a>
-                ${pdfSrc ? `<a href="${pdfSrc}" target="_blank" class="btn btn-outline" style="flex:1; justify-content:center;">Cheat Sheet PDF</a>` : ''}
+                <a href="${escapeHtml(videoSrc)}" download class="btn btn-outline" style="flex:1; justify-content:center;">Download MP4</a>
+                ${pdfSrc ? `<a href="${escapeHtml(pdfSrc)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="flex:1; justify-content:center;">Cheat Sheet PDF</a>` : ''}
               </div>
             ` : `<div style="padding:40px; border-radius:16px; background:#000; border:1px solid var(--card-border); text-align:center; color:var(--muted);">No MP4 rendered for this plan yet.</div>`}
           </div>
@@ -641,7 +718,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
             <div class="panel">
               <div class="panel-header">Manual Publishing Gate <span>(Only On Your Click)</span></div>
               <p style="font-size:13px; color:var(--muted); margin-bottom:14px;">Once you verify that audio pronunciation and all visual frames are 100% correct, you can publish to YouTube Shorts with a single click:</p>
-              <button class="btn btn-green" onclick="publishYouTube('${data.id}')">Publish to YouTube Shorts</button>
+              <button class="btn btn-green publish-youtube">Publish to YouTube Shorts</button>
             </div>
           </div>
         </div>
@@ -651,6 +728,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
           <div class="beats-list">${beatsHtml}</div>
         </div>
       `;
+      const publishButton = container.querySelector('.publish-youtube');
+      if (publishButton) publishButton.addEventListener('click', () => publishYouTube(data.id));
     }
 
     async function triggerRun(scriptOnly) {

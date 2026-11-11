@@ -58,6 +58,8 @@ The output is written to:
 output\final\<timestamp>_<topic>.mp4
 ```
 
+AI mode runs a second, topic-agnostic relevance review on the storyboard before audio or rendering. A mismatch stops the run instead of producing a video under the wrong topic. This adds one short LLM request per AI storyboard.
+
 The full run artifacts and plans are stored under:
 
 ```text
@@ -69,7 +71,7 @@ output\runs\<run-id>\
 The demo still uses Edge TTS, so it needs internet access, but it does not call the LLM:
 
 ```powershell
-.\.venv\Scripts\python.exe run.py --demo --topic "Apache Kafka" --skip-images
+.\.venv\Scripts\python.exe run.py --demo --topic "Two Sum" --skip-images
 ```
 
 The demo plan is deterministic. It is intended to verify narration, timeline generation, Remotion rendering, and the MP4 output path—not to demonstrate the quality of AI-authored content.
@@ -105,8 +107,8 @@ Model details: https://replicate.com/black-forest-labs/flux-schnell/api
 # Skip optional paid image generation
 .\.venv\Scripts\python.exe run.py --topic "Spring Boot internals" --skip-images
 
-# Demo content without LLM
-.\.venv\Scripts\python.exe run.py --demo --topic "Apache Kafka" --skip-images
+# Curated demo content without LLM
+.\.venv\Scripts\python.exe run.py --demo --topic "Two Sum" --skip-images
 
 # Set target duration in seconds (actual duration follows spoken audio)
 .\.venv\Scripts\python.exe run.py --topic "Redis caching" --duration 70
@@ -214,12 +216,11 @@ run_reel.bat --topic "Two Sum" --skip-images
 Try other topics:
 
 ```cmd
-run_reel.bat --demo --topic "Apache Kafka" --skip-images
-run_reel.bat --demo --topic "Redis caching" --skip-images
-run_reel.bat --demo --topic "Spring Boot dependency injection" --skip-images
+run_reel.bat --demo --topic "Two Sum" --skip-images
+run_reel.bat --demo --topic "Valid Anagram" --skip-images
 ```
 
-Note: demo mode is a deterministic pipeline smoke-test, not the full AI content quality benchmark. The DSA Two Sum demo has a dedicated walkthrough; other demo topics use a generic topic-safe sample structure. For production-quality topic-specific content, use the configured LLM mode.
+Note: demo mode is deterministic and only available for topics with hand-written curated plans (Two Sum, Valid Anagram, scaling, RAG, consistent hashing, and sharding). Other topics need AI mode; the pipeline will report a clear error if a curated demo is requested for an unsupported topic. Demo mode is a pipeline smoke-test, not the full AI content quality benchmark.
 
 ### Verification status
 The verification notes below refer to earlier snapshots and may not match the current code. For a local check, run `python -m unittest discover -s tests -v` and `npx.cmd tsc --noEmit` from `my-video`. A real MP4 render, Instagram publish, YouTube upload, and comment-DM require local dependencies and credentials; review generated videos before publishing.

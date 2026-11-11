@@ -7,8 +7,15 @@ from typing import Any
 
 from ai_engine.topic_classifier import classify_topic
 from ai_engine.youtube_research import fetch_youtube_research
+from ai_engine.cta import cta_keyword
+from audio_engine.tts_text import build_tts_text
 
 import requests
+
+
+class TopicAlignmentError(ValueError):
+    """Raised when generated content does not teach the requested topic."""
+
 
 ALLOWED_TYPES = {
     "kinetic_title", "cinematic_visual", "concept_visual", "architecture_build",
@@ -23,7 +30,7 @@ STORYTELLING & BENCHMARK RULES (@backendlore style):
 3. INTUITIVE MENTAL MODEL (Beats 3-4): Explain the core mechanism through a visual physical analogy (e.g., System Design: "360-degree Clock / Hash Ring", DSA: "26-bucket balance scale jahan string 1 aate hi +1, string 2 aate hi -1", "Memory Diary"). NEVER recommend slow Sorting O(n log n) when O(n) Hash/Frequency array exists!
 4. DRY RUN & PROOF (Beat 4-5): Walk through a concrete, vivid example (e.g. 'listen' vs 'silent' showing buckets zeroing out, or key routing).
 5. COMPLEXITY & WIN: Emphasize the exact algorithmic leap (e.g., O(n log n) dropped to O(n) time, O(1) space).
-6. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior Indian tech lead explaining 1-on-1 in natural Hinglish. Never use "/" slashes in spoken_text or tts_text (write "aur" or "ya" instead).
+6. CONVERSATIONAL HINGLISH: Narration must sound like an enthusiastic senior Indian tech lead explaining 1-on-1 in natural Hinglish. Never use "/" slashes in spoken_text (write "aur" or "ya" instead).
 7. PACING: Keep each spoken_text beat concise and punchy (14-24 words).
 8. OUTRO CTA & INFINITE SEAMLESS LOOP: Final beat summarizes the key takeaway + asks a clever edge-case question + "Comment [KEYWORD] for PDF notes!". Crucially, the last sentence must flow seamlessly back into Beat 1's hook so viewers watch it twice on loop without noticing the cut!
 
@@ -35,15 +42,15 @@ Each beat must have:
 - id: short snake_case unique (use: hook, problem, core_model, data_flow, optimization, summary)
 - type: one of kinetic_title, comparison, architecture_build, data_flow, concept_visual, metric_callout, summary
 - title: max 5 words, punchy editorial title
-- spoken_text: natural conversational narration in Roman Hinglish for on-screen captions, 14-24 words (NO slashes "/")
-- tts_text: REQUIRED Devanagari Hindi + English tech terms version of spoken_text for native Hindi TTS pronunciation (write ALL Hindi words in Devanagari script like इंटरव्यू, पूछा, सर्वर, क्रैश, डेटा, कैसे, क्यों, and spell out acronyms like RAG as आर ए जी, DB as डी बी, API as ए पी आई)
+- spoken_text: natural conversational narration in Roman Hinglish, 14-24 words (NO slashes "/"). This is the ONLY narration: the on-screen captions, the voice and the visuals are all generated from it, so every number, name and concept shown in nodes/steps/metric MUST also be said in spoken_text of the SAME beat.
 - visual_action: specific animation instruction for motion graphics
 - accent_words: array of 2-4 highlight words
 - asset_prompt: null
-- nodes: REQUIRED array of 2-4 objects {label, detail, color} with concrete numbers/examples (NEVER leave empty except on summary if steps are used)
+- nodes: REQUIRED array of 2-4 objects {label, detail, color} with concrete numbers/examples that are mentioned in this beat's spoken_text (NEVER leave empty except on summary if steps are used)
 - connections: array of pairs of node indexes e.g. [[0,1],[1,2]]
 - steps: REQUIRED array of 3 objects {label, detail} for data_flow beats
-- metric: REQUIRED short punchy callout string on EVERY beat (e.g., "90% CACHE MISS", "0° TO 360° RING", "ONLY 1/N KEYS MOVE", "VIRTUAL NODES")
+- metric: REQUIRED short punchy callout string on EVERY beat (e.g., "90% CACHE MISS", "0° TO 360° RING", "ONLY 1/N KEYS MOVE", "VIRTUAL NODES"), must be grounded in the narration
+- visual: optional object {"kind": one of "compare" (needs exactly 2 nodes: bad approach vs good approach), "stages" (2-4 nodes or 3 steps shown as a pipeline), or "metric" (one big number/claim)}. Omit "visual" to let the system choose from beat type. Never invent hash rings, rate-limit gates, token buckets or HTTP codes unless the topic itself is about them.
 """
 
 _ROMAN_TO_DEVANAGARI: dict[str, str] = {
@@ -75,9 +82,42 @@ _ROMAN_TO_DEVANAGARI: dict[str, str] = {
     "dhoondhna": "ढूँढना", "dhoondhne": "ढूँढने", "लगाते": "लगाते", "lagate": "लगाते", "lagta": "लगता", "laga": "लगा",
     "baant": "बाँट", "jodna": "जोड़ना", "bhej": "भेज", "badhne": "बढ़ने", "badhana": "बढ़ाना", "teeno": "तीनों",
     "ratta": "रट्टा", "baar": "बार", "baar-baar": "बार-बार",
+    "dono": "दोनों", "kar": "कर", "karke": "करके", "karna": "करना", "karo": "करो", "leta": "लेता", "mana": "मना",
+    "turant": "तुरंत", "idea": "आइडिया", "banao": "बनाओ", "hamari": "हमारी", "hamara": "हमारा", "liye": "लिए",
+    "bacha": "बचा", "sach": "सच", "milenge": "मिलेंगे", "mile": "मिले", "milta": "मिलता", "milte": "मिलते",
+    "log": "लोग", "waste": "वेस्ट", "kyun": "क्यों", "kaun": "कौन", "kitne": "कितने", "chahiye": "चाहिए",
+    "chahta": "चाहता", "chahte": "चाहते", "dalte": "डालते", "dalo": "डालो", "dekhte": "देखते", "milao": "मिलाओ",
+    "wala": "वाला", "wali": "वाली", "wale": "वाले", "sirf": "सिर्फ़", "bilkul": "बिल्कुल", "abhi": "अभी",
+    "phir": "फिर", "fir": "फिर", "tak": "तक", "tha": "था", "the": "थे", "hoga": "होगा", "hogi": "होगी",
+    "sakte": "सकते", "sakta": "सकता", "sakti": "सकती", "chalo": "चलो", "chalta": "चलता", "chalte": "चलते",
+    "samajh": "समझ", "samjha": "समझा", "pata": "पता", "seedha": "सीधा", "ulta": "उल्टा", "pehla": "पहला",
+    "doosra": "दूसरा", "doosre": "दूसरे", "tisra": "तीसरा", "aakhri": "आखिरी", "naya": "नया", "purana": "पुराना",
+    "asli": "असली", "magic": "मैजिक", "tarika": "तरीका", "trick": "ट्रिक", "kaafi": "काफ़ी", "bahut": "बहुत",
+    "thoda": "थोड़ा", "zyada": "ज़्यादा", "ghar": "घर", "kaam": "काम", "kaise": "कैसे", "kyunki": "क्योंकि",
+    "isliye": "इसलिए", "jaisa": "जैसा", "waise": "वैसे", "agar": "अगर", "warna": "वरना", "nahi": "नहीं",
+    "haan": "हाँ", "sab": "सब", "sabhi": "सभी", "koi": "कोई", "kuch": "कुछ", "unka": "उनका", "uska": "उसका",
     "interview": "इंटरव्यू", "interviewer": "इंटरव्यूअर", "server": "सर्वर", "servers": "सर्वर्स",
     "data": "डेटा", "database": "डेटाबेस", "crash": "क्रैश", "sab": "सब", "jaate": "जाते", "jate": "जाते",
     "hotey": "होते", "hota": "होता", "problem": "प्रॉब्लम", "jab": "जब", "ek": "एक", "do": "दो", "char": "चार",
+    "augmented": "ऑगमेंटेड", "brute": "ब्रूट", "chatgpt": "चैट जी पी टी", "chunk": "चंक", "chunks": "चंक्स",
+    "context": "कॉन्टेक्स्ट", "dhoondho": "ढूँढो", "downtime": "डाउनटाइम", "embedding": "एम्बेडिंग",
+    "exactly": "एग्ज़ैक्टली", "generation": "जनरेशन", "hashmap": "हैशमैप", "inke": "इनके", "instant": "इंस्टेंट",
+    "jodo": "जोड़ो", "likho": "लिखो", "model": "मॉडल", "photosynthesis": "फ़ोटोसिंथेसिस", "retrieval": "रिट्रीवल",
+    "robin": "रॉबिन", "round": "राउंड", "scaling": "स्केलिंग", "stateless": "स्टेटलेस", "sum": "सम",
+    "twosum": "टू सम", "target": "टारगेट", "tumne": "तुमने", "vector": "वेक्टर", "window": "विंडो",
+    "zyadatar": "ज़्यादातर", "answer": "आंसर", "app": "ऐप", "approach": "अप्रोच", "beech": "बीच",
+    "comparisons": "कम्पैरिज़न्स", "complement": "कॉम्प्लिमेंट", "current": "करंट", "diary": "डायरी",
+    "down": "डाउन", "drop": "ड्रॉप", "force": "फ़ोर्स", "hokar": "होकर", "index": "इंडेक्स",
+    "inhein": "इन्हें", "inhi": "इन्हीं", "isse": "इससे", "itna": "इतना", "jawab": "जवाब", "jo": "जो",
+    "jod": "जोड़", "kaato": "काटो", "karoge": "करोगे", "kat": "कट", "lakho": "लाखों", "lata": "लाता",
+    "lete": "लेते", "likhta": "लिखता", "limit": "लिमिट", "login": "लॉगिन", "lookup": "लुकअप",
+    "loops": "लूप्स", "machines": "मशीन्स", "memory": "मेमोरी", "milata": "मिलाता", "ne": "ने",
+    "nested": "नेस्टेड", "number": "नंबर", "numbers": "नंबर्स", "overload": "ओवरलोड", "paas": "पास",
+    "paate": "पाते", "padh": "पढ़", "padhta": "पढ़ता", "page": "पेज", "pages": "पेजेस", "pair": "पेयर",
+    "percent": "परसेंट", "poori": "पूरी", "rakh": "रख", "reject": "रिजेक्ट", "rule": "रूल",
+    "rupaye": "रुपये", "saare": "सारे", "sahi": "सही", "sawal": "सवाल", "second": "सेकंड",
+    "session": "सेशन", "smart": "स्मार्ट", "square": "स्क्वायर", "store": "स्टोर", "tukdon": "टुकड़ों",
+    "yahi": "यही",
 }
 
 
@@ -142,6 +182,65 @@ def _endpoint() -> str:
     return base if base.endswith("/chat/completions") else f"{base}/chat/completions"
 
 
+def _review_topic_alignment(topic: str, plan: dict[str, Any], headers: dict[str, str], model: str) -> None:
+    """Use a topic-agnostic second pass to reject storyboards that teach a different subject."""
+    review_beats = []
+    for beat in plan.get("beats", []):
+        if not isinstance(beat, dict):
+            continue
+        review_beats.append({
+            key: beat.get(key)
+            for key in ("title", "spoken_text", "visual_action", "metric", "nodes", "steps")
+            if beat.get(key)
+        })
+
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a strict storyboard topic-alignment reviewer. Compare the requested topic with "
+                    "the actual lesson taught across all beats. Ignore the plan's declared topic/title if its "
+                    "narration, examples, visual directions, or steps teach something else. Related background "
+                    "concepts are allowed only when they support the requested topic. Return JSON only with "
+                    '"is_relevant" (boolean) and "reason" (short string).'
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {"requested_topic": topic, "storyboard": review_beats},
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+    }
+    timeout_s = int(os.getenv("LLM_TIMEOUT", "30"))
+    try:
+        response = requests.post(_endpoint(), headers=headers, json=payload, timeout=timeout_s)
+        if response.status_code in {400, 404, 422}:
+            payload.pop("response_format", None)
+            response = requests.post(_endpoint(), headers=headers, json=payload, timeout=timeout_s)
+        response.raise_for_status()
+        body = response.json()
+        content = body["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "\n".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+        verdict = _extract_json(content)
+        if verdict.get("is_relevant") is not True:
+            reason = str(verdict.get("reason") or "The storyboard does not teach the requested topic.")
+            raise TopicAlignmentError(f"Topic relevance review failed for '{topic}': {reason} No video was rendered.")
+    except TopicAlignmentError:
+        raise
+    except Exception as exc:
+        raise TopicAlignmentError(
+            f"Topic relevance review could not verify '{topic}' ({exc}). No video was rendered."
+        ) from exc
+
+
 def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("FREELLM_API_KEY")
     if not api_key:
@@ -175,6 +274,7 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     last_exc: Exception | None = None
     content = ""
+    selected_model = ""
     for model_name in dict.fromkeys(candidate_models):
         payload = {
             "model": model_name,
@@ -200,6 +300,7 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
             parsed = _extract_json(raw_content)
             if isinstance(parsed.get("beats"), list) and len(parsed["beats"]) >= 5:
                 content = raw_content
+                selected_model = model_name
                 print(f"[llm] Generated {len(parsed['beats'])} beats via model '{model_name}' (routed: {body.get('model', model_name)})")
                 break
         except Exception as exc:
@@ -210,6 +311,8 @@ def generate_plan(topic: str, duration_seconds: int = 70) -> dict[str, Any]:
         raise RuntimeError(f"LLM request failed across candidate models: {last_exc}")
 
     plan = _extract_json(content)
+    _review_topic_alignment(topic, plan, headers, selected_model)
+    print(f"[topic-review] Storyboard matches requested topic: {topic}")
     plan.setdefault("title", f"{topic}: explained")
     # Preserve the model's claimed topic. validate_and_normalize must inspect it;
     # silently replacing it here previously hid topic drift.
@@ -258,36 +361,6 @@ def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
             raise ValueError("Topic relevance check failed for Two Sum: Kafka concepts detected (" + ", ".join(leaked) + "). No video was rendered.")
         if missing:
             raise ValueError("Topic relevance check failed for Two Sum: missing core teaching concepts (" + ", ".join(missing) + "). No video was rendered.")
-
-    # Keep a correctly named Anagram plan from carrying over the adjacent Two Sum lesson.
-    if re.search(r"\banagrams?\b", topic, re.I):
-        anagram_corpus_parts: list[str] = []
-        for beat in beats:
-            if not isinstance(beat, dict):
-                continue
-            anagram_corpus_parts.extend(
-                str(beat.get(key, ""))
-                for key in ("id", "title", "spoken_text", "tts_text", "visual_action", "metric")
-            )
-            for key in ("nodes", "steps"):
-                values = beat.get(key, [])
-                if isinstance(values, list):
-                    anagram_corpus_parts.extend(str(value) for value in values)
-        anagram_corpus = " ".join(anagram_corpus_parts)
-        two_sum_markers = (
-            r"\btwo\s*sum\b",
-            r"\bleetcode\s*#?\s*1\b",
-            r"\bcomplement\b.{0,80}\btarget\b",
-            r"\btarget\b.{0,80}\bcomplement\b",
-        )
-        if any(re.search(pattern, anagram_corpus, re.I) for pattern in two_sum_markers):
-            raise ValueError(
-                "Topic relevance check failed for Anagram: Two Sum content detected. No video was rendered."
-            )
-        if not re.search(r"\banagram\b|frequen(?:cy|cies)|character count|letter count", anagram_corpus, re.I):
-            raise ValueError(
-                "Topic relevance check failed for Anagram: no anagram/frequency-count teaching content found. No video was rendered."
-            )
 
     clean_beats: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -343,7 +416,8 @@ def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
             "type": beat_type,
             "title": str(item.get("title") or topic)[:80],
             "spoken_text": spoken,
-            "tts_text": ensure_devanagari_tts_text(spoken, item.get("tts_text")),
+            "tts_text": build_tts_text(spoken),
+            "visual": item.get("visual") if isinstance(item.get("visual"), dict) else None,
             "visual_action": str(item.get("visual_action", "Reveal the key concept with a purposeful motion."))[:300],
             "accent_words": [str(x)[:30] for x in (item.get("accent_words") or [])[:8]],
             "asset_prompt": str(item["asset_prompt"])[:700] if item.get("asset_prompt") else None,
@@ -352,20 +426,13 @@ def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
             "steps": clean_steps,
             "metric": str(item.get("metric", ""))[:35],
         })
+    kw = cta_keyword(topic)
     if clean_beats:
         last = clean_beats[-1]
         last_spoken = last["spoken_text"]
-        last_tts = last.get("tts_text") or ""
-        # Choose a clean, pronounceable keyword: if topic has multiple words, pick the main noun
-        topic_words = [w for w in re.findall(r"[A-Za-z]+", topic) if w.lower() not in ("valid", "the", "an", "a", "problem", "solution")]
-        kw = topic_words[-1].upper() if topic_words else "NOTES"
         if not any(w in last_spoken.lower() for w in ("comment", "pdf", "notes", "cheat sheet")):
-            last["spoken_text"] = f"{last_spoken.rstrip('.!')}. Comment {kw} for complete PDF interview notes!"
-            if last_tts and re.search(r"[\u0900-\u097F]", last_tts):
-                last["tts_text"] = f"{last_tts.rstrip('।!.')}। कमेंट {kw} करो और कंप्लीट पी डी एफ नोट्स सेव कर लो!"
-                last["tts_text"] = ensure_devanagari_tts_text(last["spoken_text"], last["tts_text"])
-            else:
-                last["tts_text"] = ensure_devanagari_tts_text(last["spoken_text"], None)
+            last["spoken_text"] = f"{last_spoken.rstrip('.!?')}. Comment {kw} for complete PDF interview notes!"
+            last["tts_text"] = build_tts_text(last["spoken_text"])
             if not last.get("accent_words"):
                 last["accent_words"] = ["Comment", kw]
             elif kw not in last["accent_words"]:
@@ -380,5 +447,6 @@ def validate_and_normalize(plan: dict[str, Any], topic: str) -> dict[str, Any]:
         "teaching_format": profile.format_name,
         "language": str(plan.get("language", "hinglish")),
         "target_duration_seconds": int(plan.get("target_duration_seconds", 70)),
+        "cta_keyword": kw,
         "beats": clean_beats,
     }
